@@ -351,7 +351,6 @@ export class PdfExporter {
           <path d="M4.5 8.2 L7 10.7 L11.5 5.5" fill="none" stroke="#15803d" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
         <div class="stamp-status">BESTANDEN</div>
-        <div class="stamp-note">Alle Grenzwerte nach DIN EN 50346 eingehalten</div>
       </div>
     </div>
   </div>
