@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { CustomerItem, AppSettings } from '../types';
 
 interface ProtocolPreviewModalProps {
@@ -25,6 +25,14 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
     cableId: customer.customOverrides?.cableId ?? customer.cableId ?? `K-${customer.id}`,
     fiberNumber: customer.customOverrides?.fiberNumber ?? customer.fiberNumber ?? 1,
   });
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   const handleSave = () => {
     const updated: CustomerItem = {
@@ -70,7 +78,7 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
   }
 
   return (
-    <div style={styles.overlay}>
+    <div style={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={styles.container}>
         {/* HEADER BAR */}
         <div style={styles.header}>
@@ -239,9 +247,7 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
                     <div style={a4CardHeaderStyle}>2. Messgeräte- &amp; Parameter-Setup (Kalibriert)</div>
                     <table style={styles.a4Table}>
                       <tbody>
-                        <tr><td style={styles.a4Label}>OTDR Messgerät:</td><td style={styles.a4Val}>VIAVI MTS-2000 v2 (SmartOTDR Platform)</td></tr>
-                        <tr><td style={styles.a4Label}>Seriennr. / Modul:</td><td style={styles.a4Val}>MTS2K-SN4928172 · E4126LM-OTDR</td></tr>
-                        <tr><td style={styles.a4Label}>Kalibriernachweis:</td><td style={{ ...styles.a4Val, color: '#15803d' }}>15.01.2026 (Gültig nach ISO/IEC 17025)</td></tr>
+                        <tr><td style={styles.a4Label}>OTDR Messgerät:</td><td style={styles.a4Val}>{settings.otdrDeviceModel || '–'}</td></tr>
                         <tr><td style={styles.a4Label}>Auftragnehmer:</td><td style={styles.a4Val}>{settings.companyName}</td></tr>
                         <tr><td style={styles.a4Label}>Messtechniker:</td><td style={styles.a4Val}>{formData.technicianName}</td></tr>
                         <tr><td style={styles.a4Label}>Wellenlänge / Puls:</td><td style={styles.a4Val}>{sor.wavelength} · {sor.pulseWidth}</td></tr>

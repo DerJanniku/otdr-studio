@@ -306,9 +306,7 @@ export class PdfExporter {
       <div class="card">
         <div class="card-header">2. Messgeräte- &amp; Parameter-Setup (Kalibriert)</div>
         <table class="data-table">
-          <tr><td class="label">OTDR Messgerät:</td><td class="val">VIAVI MTS-2000 v2 (SmartOTDR Platform)</td></tr>
-          <tr><td class="label">Seriennr. / Modul:</td><td class="val">MTS2K-SN4928172 · E4126LM-OTDR</td></tr>
-          <tr><td class="label">Kalibriernachweis:</td><td class="val" style="color:#15803d;">15.01.2026 (Gültig nach ISO/IEC 17025)</td></tr>
+          <tr><td class="label">OTDR Messgerät:</td><td class="val">${settings.otdrDeviceModel || '–'}</td></tr>
           <tr><td class="label">Auftragnehmer:</td><td class="val">${settings.companyName}</td></tr>
           <tr><td class="label">Messtechniker:</td><td class="val">${effectiveTech}</td></tr>
           <tr><td class="label">Wellenlänge / Puls:</td><td class="val">${sorData.wavelength} · ${sorData.pulseWidth}</td></tr>

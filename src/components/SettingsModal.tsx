@@ -25,6 +25,14 @@ export function SettingsModal({ settings, onClose, onSave }: SettingsModalProps)
     }
   }, []);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   const handleLoadPreset = () => {
     const preset = presets.find(p => p.id === selectedPresetId);
     if (preset) setFormData({ ...preset.settings });
@@ -64,7 +72,7 @@ export function SettingsModal({ settings, onClose, onSave }: SettingsModalProps)
   const ACCENT_PRESETS = ['#3b82f6', '#22c55e', '#a855f7', '#f97316', '#ef4444', '#0ea5e9'];
 
   return (
-    <div style={styles.overlay}>
+    <div style={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={styles.container}>
         <div style={styles.header}>
           <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>
@@ -160,8 +168,17 @@ export function SettingsModal({ settings, onClose, onSave }: SettingsModalProps)
               />
             </div>
             <div>
+              <label style={styles.label}>OTDR-Messgerät (Modell):</label>
+              <input
+                style={styles.input}
+                placeholder="z. B. VIAVI MTS-2000, EXFO FTB-1, ..."
+                value={formData.otdrDeviceModel}
+                onChange={(e) => setFormData({ ...formData, otdrDeviceModel: e.target.value })}
+              />
+            </div>
+            <div>
               <label style={styles.label}>Vorlauf- &amp; Nachlauffaser:</label>
-              <input 
+              <input
                 style={styles.input}
                 value={formData.launchFiber}
                 onChange={(e) => setFormData({ ...formData, launchFiber: e.target.value })}
@@ -288,6 +305,9 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '12px',
     width: '90%',
     maxWidth: '650px',
+    maxHeight: '85vh',
+    display: 'flex',
+    flexDirection: 'column',
     boxShadow: '0 20px 60px rgba(0,0,0,0.8)',
     overflow: 'hidden',
   },
@@ -308,6 +328,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   body: {
     padding: '1.25rem',
+    overflowY: 'auto',
+    flex: 1,
   },
   presetBar: {
     backgroundColor: 'var(--color-bg-surface-elevated)',

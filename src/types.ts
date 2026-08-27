@@ -44,6 +44,7 @@ export interface AppSettings {
   maxLossSplice: number;
   maxLossConnector: number;
   minOrl: number;
+  otdrDeviceModel: string;
   logoBase64?: string;
   signatureBase64?: string;
   accentColor: string;
