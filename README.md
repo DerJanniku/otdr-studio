@@ -17,6 +17,17 @@ Grenzwerte). Es können beliebig viele Firmenprofile angelegt und gewechselt wer
 - Helles/dunkles Design, freie Akzentfarbe, eigenes Firmenlogo
 - Prüft beim Start automatisch auf neue Versionen (GitHub Releases)
 
+## Woher kommen die Daten im Protokoll?
+
+- **Kunden-/Auftragsdaten** (Name, Adresse, Kabel-ID, Segment, Auftrags-Nr., ...) kommen aus der
+  importierten Excel-/CSV-Kundenliste. Eine Beispieldatei mit den erkannten Spaltennamen liegt unter
+  [`src/example-data/Beispiel-Kundenliste.xlsx`](src/example-data/Beispiel-Kundenliste.xlsx) - gut
+  geeignet zum Ausprobieren oder als Vorlage für die eigene Liste.
+- **Messwerte** (Dämpfung, Länge, ORL, Ereignistabelle, Kurve) kommen aus den `.sor`-Dateien beim
+  Scannen des USB-Sticks/Messordners und werden automatisch per Job-ID der Kundenliste zugeordnet.
+- Der einzelne Beispiel-Datensatz, der beim allerersten Start angezeigt wird, ist reine Demo-Anzeige
+  und keiner echten Excel-Datei entnommen.
+
 ## Installation
 
 Fertige Installer für macOS (`.dmg`), Windows (`.exe`) und Linux (`.AppImage` / `.deb`) findest du unter
