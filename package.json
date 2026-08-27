@@ -1,0 +1,69 @@
+{
+  "name": "otdr-studio",
+  "description": "Freie, quelloffene Desktop-App zur automatisierten Zuordnung von OTDR-Messungen (.sor) zu Kundendatensätzen und zum Erzeugen von DIN EN 50346 Abnahmeprotokollen als PDF - für jede Glasfaser-Messtechnik-Firma nutzbar.",
+  "author": "DerJannik",
+  "license": "GPL-3.0-or-later",
+  "homepage": "https://github.com/DerJanniku/otdr-studio",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DerJanniku/otdr-studio.git"
+  },
+  "private": true,
+  "version": "1.0.0",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && electron-builder",
+    "build:mac": "vite build && electron-builder --mac",
+    "build:win": "vite build && electron-builder --win",
+    "build:linux": "vite build && electron-builder --linux",
+    "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.node.json",
+    "lint": "oxlint",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "sor-reader": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^6.1.0",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
+    "oxlint": "^1.80.0",
+    "typescript": "~7.0.2",
+    "vite": "^8.2.2",
+    "vite-plugin-electron": "^1.1.1",
+    "vite-plugin-electron-renderer": "^1.0.0"
+  },
+  "build": {
+    "appId": "de.derjannik.otdrstudio",
+    "productName": "OTDR Studio",
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "icon": "build/icon.png",
+      "target": ["dmg"],
+      "category": "public.app-category.utilities"
+    },
+    "win": {
+      "icon": "build/icon.png",
+      "target": ["nsis"]
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "target": ["AppImage", "deb"],
+      "category": "Utility"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "DerJanniku",
+      "repo": "otdr-studio"
+    }
+  }
+}
