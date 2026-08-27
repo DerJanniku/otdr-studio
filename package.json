@@ -1,7 +1,10 @@
 {
   "name": "otdr-studio",
   "description": "Freie, quelloffene Desktop-App zur automatisierten Zuordnung von OTDR-Messungen (.sor) zu Kundendatensätzen und zum Erzeugen von DIN EN 50346 Abnahmeprotokollen als PDF - für jede Glasfaser-Messtechnik-Firma nutzbar.",
-  "author": "DerJannik",
+  "author": {
+    "name": "DerJannik",
+    "email": "kontakt@derjannik.de"
+  },
   "license": "GPL-3.0-or-later",
   "homepage": "https://github.com/DerJanniku/otdr-studio",
   "repository": {
@@ -58,7 +61,8 @@
     "linux": {
       "icon": "build/icon.png",
       "target": ["AppImage", "deb"],
-      "category": "Utility"
+      "category": "Utility",
+      "desktopName": "otdr-studio.desktop"
     },
     "publish": {
       "provider": "github",

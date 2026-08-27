@@ -288,7 +288,6 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
                         <path d="M4.5 8.2 L7 10.7 L11.5 5.5" fill="none" stroke="#15803d" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                       <div style={{ fontSize: '9pt', fontWeight: 800, color: '#14532d', letterSpacing: '1.2px' }}>BESTANDEN</div>
-                      <div style={{ fontSize: '5.2pt', color: '#166534' }}>Alle Grenzwerte nach DIN EN 50346 eingehalten</div>
                     </div>
                   </div>
                 </div>
