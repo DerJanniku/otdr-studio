@@ -248,10 +248,13 @@ export class PdfExporter {
   .sign-col:last-child { padding-right: 0; padding-left: 12px; }
   .sign-line {
     border-bottom: 1px dashed #94a3b8;
-    height: 16px;
+    height: 32px;
     margin-top: 2px;
     margin-bottom: 2px;
+    display: flex;
+    align-items: flex-end;
   }
+  .sign-line img { max-height: 30px; max-width: 100%; }
   .sign-caption {
     color: #64748b;
     font-size: 5.8pt;
@@ -267,7 +270,7 @@ export class PdfExporter {
     <tr>
       <td style="vertical-align: middle; width: 55%;">
         ${brandHtml}
-        <div class="header-subtext">Auftraggeber: <strong>${settings.providerName}</strong> · Qualitätssicherung FTTH-Rollout</div>
+        <div class="header-subtext">Auftraggeber: <strong>${settings.providerName}</strong></div>
       </td>
       <td class="doc-badge" style="vertical-align: middle; width: 45%;">
         <div class="doc-title">OTDR-ABNAHMEPROTOKOLL</div>
@@ -358,7 +361,7 @@ export class PdfExporter {
   <!-- GRAPH SECTION -->
   <div class="graph-box">
     <div class="graph-header">
-      <span>4. OTDR SIGNALKURVE (DÄMPFUNGSVERLAUF IN DB ÜBER DISTANZ) · 1310 nm</span>
+      <span>4. OTDR Signalkurve · 1310 nm</span>
       <span>Auflösung: ${sorData.resolution ? sorData.resolution.toFixed(2) : '0.32'} m · Messdatei: ${customer.sorFileName || `Job_${customer.id}.sor`}</span>
     </div>
     <svg viewBox="0 0 740 140" style="width:100%; height:126px; display:block; background:#ffffff;">
@@ -460,7 +463,7 @@ export class PdfExporter {
   <div class="sign-grid">
     <div class="sign-col">
       <div><strong>Prüfer / Auftragnehmer:</strong></div>
-      <div class="sign-line"></div>
+      <div class="sign-line">${settings.signatureBase64 ? `<img src="${settings.signatureBase64}" alt="Unterschrift" />` : ''}</div>
       <div class="sign-caption">
         <span>${effectiveTech}</span>
         <span>Ort, Datum, Stempel / Unterschrift</span>

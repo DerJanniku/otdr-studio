@@ -45,6 +45,7 @@ export interface AppSettings {
   maxLossConnector: number;
   minOrl: number;
   logoBase64?: string;
+  signatureBase64?: string;
   accentColor: string;
   themeMode: 'dark' | 'light';
 }

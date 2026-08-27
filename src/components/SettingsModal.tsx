@@ -54,6 +54,13 @@ export function SettingsModal({ settings, onClose, onSave }: SettingsModalProps)
     reader.readAsDataURL(file);
   };
 
+  const handleSignatureUpload = (file: File | null) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setFormData({ ...formData, signatureBase64: String(reader.result) });
+    reader.readAsDataURL(file);
+  };
+
   const ACCENT_PRESETS = ['#3b82f6', '#22c55e', '#a855f7', '#f97316', '#ef4444', '#0ea5e9'];
 
   return (
@@ -227,10 +234,28 @@ export function SettingsModal({ settings, onClose, onSave }: SettingsModalProps)
             <label style={styles.label}>Firmenlogo (optional, erscheint auf dem PDF-Protokoll):</label>
             <input type="file" accept="image/png,image/jpeg,image/svg+xml" onChange={(e) => handleLogoUpload(e.target.files?.[0] || null)} />
             {formData.logoBase64 && (
-              <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <div style={{ marginTop: '0.5rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                 <img src={formData.logoBase64} alt="Logo-Vorschau" style={{ maxHeight: '36px', maxWidth: '180px' }} />
                 <button style={styles.btnPresetDanger} onClick={() => setFormData({ ...formData, logoBase64: undefined })}>
                   Logo entfernen
+                </button>
+              </div>
+            )}
+
+            <label style={{ ...styles.label, marginTop: '0.75rem' }}>
+              Eigene Unterschrift (optional - wird automatisch bei "Prüfer / Auftragnehmer" ins PDF eingesetzt):
+            </label>
+            <input type="file" accept="image/png,image/jpeg" onChange={(e) => handleSignatureUpload(e.target.files?.[0] || null)} />
+            <p style={styles.presetHint}>
+              Am besten ein Foto/Scan deiner Unterschrift auf weißem Hintergrund oder ein PNG mit transparentem
+              Hintergrund. Die Abnahme-Unterschrift des Auftraggebers bleibt weiterhin ein leeres Feld zum
+              manuellen Unterschreiben - die kann die App nicht für jemand anderen leisten.
+            </p>
+            {formData.signatureBase64 && (
+              <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <img src={formData.signatureBase64} alt="Unterschrift-Vorschau" style={{ maxHeight: '36px', maxWidth: '180px', backgroundColor: '#fff', borderRadius: '4px', padding: '2px 6px' }} />
+                <button style={styles.btnPresetDanger} onClick={() => setFormData({ ...formData, signatureBase64: undefined })}>
+                  Unterschrift entfernen
                 </button>
               </div>
             )}

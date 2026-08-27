@@ -61,8 +61,7 @@
     "linux": {
       "icon": "build/icon.png",
       "target": ["AppImage", "deb"],
-      "category": "Utility",
-      "desktopName": "otdr-studio.desktop"
+      "category": "Utility"
     },
     "publish": {
       "provider": "github",

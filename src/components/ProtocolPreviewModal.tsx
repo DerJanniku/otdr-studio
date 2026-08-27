@@ -206,7 +206,7 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
                       <div style={{ fontWeight: 800, fontSize: '10pt', color: accent }}>{settings.companyName}</div>
                     )}
                     <div style={{ fontSize: '6pt', color: '#475569', marginTop: '2px' }}>
-                      Auftraggeber: <strong>{settings.providerName}</strong> · Qualitätssicherung FTTH-Rollout
+                      Auftraggeber: <strong>{settings.providerName}</strong>
                     </div>
                   </div>
                   <div style={{ textAlign: 'right', width: '45%' }}>
@@ -295,7 +295,7 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
                 {/* 4. Graph */}
                 <div style={styles.a4GraphBox}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '6pt', fontWeight: 700, color: accent, marginBottom: '2px' }}>
-                    <span>4. OTDR SIGNALKURVE (DÄMPFUNGSVERLAUF IN DB ÜBER DISTANZ) · 1310 nm</span>
+                    <span>4. OTDR Signalkurve · 1310 nm</span>
                     <span>Auflösung: {sor.resolution ? Number(sor.resolution).toFixed(2) : '0.32'} m · Messdatei: {customer.sorFileName || `Job_${customer.id}.sor`}</span>
                   </div>
                   <svg viewBox="0 0 740 140" style={{ width: '100%', height: '118px', background: '#ffffff', display: 'block' }}>
@@ -387,7 +387,9 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
                 <div style={styles.a4SignGrid}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: '5.8pt', fontWeight: 700 }}>Prüfer / Auftragnehmer:</div>
-                    <div style={styles.a4SignLine} />
+                    <div style={styles.a4SignLine}>
+                      {settings.signatureBase64 && <img src={settings.signatureBase64} alt="Unterschrift" style={{ maxHeight: '26px', maxWidth: '100%' }} />}
+                    </div>
                     <div style={styles.a4SignCaption}>
                       <span>{formData.technicianName}</span>
                       <span>Ort, Datum, Stempel / Unterschrift</span>
@@ -657,7 +659,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   a4SignLine: {
     borderBottom: '1px dashed #94a3b8',
-    height: '14px',
+    height: '28px',
+    display: 'flex',
+    alignItems: 'flex-end',
     marginTop: '1px',
     marginBottom: '1px',
   },
