@@ -170,6 +170,9 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '12px',
     width: '90%',
     maxWidth: '560px',
+    maxHeight: '85vh',
+    display: 'flex',
+    flexDirection: 'column',
     boxShadow: '0 20px 60px rgba(0,0,0,0.8)',
     overflow: 'hidden',
   },
@@ -195,6 +198,8 @@ const styles: Record<string, React.CSSProperties> = {
   body: {
     padding: '1.4rem',
     minHeight: '220px',
+    overflowY: 'auto',
+    flex: 1,
     color: 'var(--color-text-primary)',
     fontSize: '0.85rem',
     lineHeight: 1.5,

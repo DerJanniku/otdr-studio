@@ -18,6 +18,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   maxLossSplice: 0.15,
   maxLossConnector: 0.50,
   minOrl: 45.0,
+  otdrDeviceModel: '',
   accentColor: '#3b82f6',
   themeMode: 'dark',
 };
@@ -175,6 +176,9 @@ export function App() {
   const handleSaveSettings = async (newSettings: AppSettings) => {
     if (window.api?.saveAppSettings) {
       await window.api.saveAppSettings(newSettings);
+      if (window.api?.saveSettingPreset && newSettings.companyName.trim()) {
+        await window.api.saveSettingPreset(newSettings.companyName.trim(), newSettings);
+      }
       setSettings(newSettings);
       setShowSettings(false);
       showToast('Einstellungen gespeichert.');

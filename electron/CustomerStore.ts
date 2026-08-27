@@ -49,6 +49,7 @@ export interface AppSettings {
   maxLossSplice: number;
   maxLossConnector: number;
   minOrl: number;
+  otdrDeviceModel: string;
   logoBase64?: string;
   signatureBase64?: string;
   accentColor: string;
@@ -97,6 +98,7 @@ export class CustomerStore {
       maxLossSplice: 0.15,
       maxLossConnector: 0.50,
       minOrl: 45.0,
+      otdrDeviceModel: '',
       accentColor: '#3b82f6',
       themeMode: 'dark',
     };

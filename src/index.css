@@ -1,7 +1,7 @@
 :root {
-  --color-bg-base: #080c14;
-  --color-bg-surface: #0e1626;
-  --color-bg-surface-elevated: #152238;
+  --color-bg-base: #0a0a0a;
+  --color-bg-surface: #161616;
+  --color-bg-surface-elevated: #202020;
   --color-border: rgba(255, 255, 255, 0.09);
   --color-border-subtle: rgba(255, 255, 255, 0.04);
   --color-primary: #3b82f6;
