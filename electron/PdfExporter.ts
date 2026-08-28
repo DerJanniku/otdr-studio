@@ -3,6 +3,26 @@ import * as path from 'path';
 import * as fs from 'fs';
 import type { CustomerItem, AppSettings } from './CustomerStore';
 
+// The protocol HTML is assembled from customer/settings text that ultimately comes from
+// imported Excel files and .sor headers - external, untrusted input. Every such value must
+// be escaped before landing in the template; otherwise a crafted field (e.g. a customer name
+// containing "<img onerror=...>") could inject script into the print window.
+function esc(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Accent color only ever needs to be a CSS hex color - reject anything else so it can't be
+// used to break out of a style attribute or <style> block.
+function safeColor(value: unknown, fallback: string): string {
+  const str = String(value ?? '');
+  return /^#[0-9a-fA-F]{3,8}$/.test(str) ? str : fallback;
+}
+
 export class PdfExporter {
   public static async generateSinglePdf(customer: CustomerItem, settings: AppSettings, targetPath: string): Promise<string> {
     if (!customer.sorData) {
@@ -14,29 +34,39 @@ export class PdfExporter {
       width: 800,
       height: 1150,
       webPreferences: {
-        nodeIntegration: true,
-        contextIsolation: false,
+        nodeIntegration: false,
+        contextIsolation: true,
       },
     });
 
     const overrides = customer.customOverrides || {};
-    const effectiveName = overrides.customerName || customer.customerName;
-    const effectiveStreet = overrides.street || customer.street;
-    const effectiveCity = overrides.city || customer.city;
-    const effectiveSegment = overrides.segment || customer.segment || `NVt ➔ HÜP ${effectiveName}`;
-    const effectiveCableId = overrides.cableId || customer.cableId || `K-${customer.id}`;
+    const effectiveName = esc(overrides.customerName || customer.customerName);
+    const effectiveStreet = esc(overrides.street || customer.street);
+    const effectiveCity = esc(overrides.city || customer.city);
+    const effectiveSegment = esc(overrides.segment || customer.segment || `NVt ➔ HÜP ${overrides.customerName || customer.customerName}`);
+    const effectiveCableId = esc(overrides.cableId || customer.cableId || `K-${customer.id}`);
     const effectiveFiberNr = overrides.fiberNumber || customer.fiberNumber || 1;
-    const effectiveTech = overrides.technicianName || customer.technicianName || settings.defaultTechnician;
+    const effectiveTech = esc(overrides.technicianName || customer.technicianName || settings.defaultTechnician);
     const effectiveDate = overrides.date || (customer.measuredAt ? new Date(customer.measuredAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : new Date().toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }));
     const effectiveTime = overrides.time || (customer.measuredAt ? new Date(customer.measuredAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr' : new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr');
 
     const sorData = customer.sorData;
 
     const docNumber = `PROTO-${new Date().getFullYear()}-JOB${String(customer.id).padStart(4, '0')}`;
-    const accent = settings.accentColor || '#3b82f6';
+    const accent = safeColor(settings.accentColor, '#3b82f6');
+    const companyNameEsc = esc(settings.companyName);
+    const providerNameEsc = esc(settings.providerName);
+    const normTitleEsc = esc(settings.normTitle);
+    const projectClusterEsc = esc(settings.projectCluster);
+    const otdrDeviceModelEsc = esc(settings.otdrDeviceModel);
+    const launchFiberEsc = esc(settings.launchFiber);
+    const orderIdEsc = esc(customer.orderId || `AUFTRAG-${customer.id}`);
+    const colorCodeEsc = esc(customer.colorCode || 'Rot (DIN 47100)');
+    const fiberTypeEsc = esc(customer.fiberType || 'Singlemode ITU-T G.657.A1 / G.652D (9/125 µm)');
+    const sorFileNameEsc = esc(customer.sorFileName || `Job_${customer.id}.sor`);
     const brandHtml = settings.logoBase64
-      ? `<img src="${settings.logoBase64}" class="brand-img" alt="${settings.companyName}" />`
-      : `<div style="font-weight:800; font-size:11pt; color:${accent};">${settings.companyName}</div>`;
+      ? `<img src="${settings.logoBase64}" class="brand-img" alt="${companyNameEsc}" />`
+      : `<div style="font-weight:800; font-size:11pt; color:${accent};">${companyNameEsc}</div>`;
 
     // Plot area of the trace chart: x in [46, 718], y in [24, 96] (viewBox 0 0 740 140)
     let svgPolyline = '';
@@ -259,11 +289,11 @@ export class PdfExporter {
     <tr>
       <td style="vertical-align: middle; width: 55%;">
         ${brandHtml}
-        <div class="header-subtext">Auftraggeber: <strong>${settings.providerName}</strong></div>
+        <div class="header-subtext">Auftraggeber: <strong>${providerNameEsc}</strong></div>
       </td>
       <td class="doc-badge" style="vertical-align: middle; width: 45%;">
         <div class="doc-title">OTDR-ABNAHMEPROTOKOLL</div>
-        <div class="doc-norm">Gemäß ${settings.normTitle}</div>
+        <div class="doc-norm">Gemäß ${normTitleEsc}</div>
         <div style="font-size: 6.3pt; color: #475569; margin-top: 1px;">
           <strong>Protokoll-Nr.:</strong> ${docNumber} &nbsp;|&nbsp; <strong>Datum:</strong> ${effectiveDate}, ${effectiveTime}
         </div>
@@ -278,14 +308,14 @@ export class PdfExporter {
       <div class="card">
         <div class="card-header">1. Auftrags- &amp; Standortdaten (Job #${customer.id})</div>
         <table class="data-table">
-          <tr><td class="label">Auftraggeber:</td><td class="val" style="color:${accent}; font-weight:800;">${settings.providerName}</td></tr>
-          <tr><td class="label">Projekt / Cluster:</td><td class="val">${settings.projectCluster}</td></tr>
-          <tr><td class="label">Auftrags-Nr.:</td><td class="val" style="color:${accent};">${customer.orderId || `AUFTRAG-${customer.id}`}</td></tr>
+          <tr><td class="label">Auftraggeber:</td><td class="val" style="color:${accent}; font-weight:800;">${providerNameEsc}</td></tr>
+          <tr><td class="label">Projekt / Cluster:</td><td class="val">${projectClusterEsc}</td></tr>
+          <tr><td class="label">Auftrags-Nr.:</td><td class="val" style="color:${accent};">${orderIdEsc}</td></tr>
           <tr><td class="label">Endkunde / Anschluss:</td><td class="val" style="font-weight:800; font-size:7.2pt;">${effectiveName}</td></tr>
           <tr><td class="label">Adresse / Standort:</td><td class="val">${effectiveStreet}, ${effectiveCity}</td></tr>
           <tr><td class="label">Mess-Abschnitt:</td><td class="val">${effectiveSegment}</td></tr>
-          <tr><td class="label">Kabel-ID / Faser-Nr.:</td><td class="val">${effectiveCableId} · <strong>Faser #${effectiveFiberNr}</strong> · ${customer.colorCode || 'Rot (DIN 47100)'}</td></tr>
-          <tr><td class="label">Fasertyp:</td><td class="val">${customer.fiberType || 'Singlemode ITU-T G.657.A1 / G.652D (9/125 µm)'}</td></tr>
+          <tr><td class="label">Kabel-ID / Faser-Nr.:</td><td class="val">${effectiveCableId} · <strong>Faser #${effectiveFiberNr}</strong> · ${colorCodeEsc}</td></tr>
+          <tr><td class="label">Fasertyp:</td><td class="val">${fiberTypeEsc}</td></tr>
         </table>
       </div>
     </div>
@@ -295,12 +325,12 @@ export class PdfExporter {
       <div class="card">
         <div class="card-header">2. Messgeräte- &amp; Parameter-Setup (Kalibriert)</div>
         <table class="data-table">
-          <tr><td class="label">OTDR Messgerät:</td><td class="val">${settings.otdrDeviceModel || '–'}</td></tr>
-          <tr><td class="label">Auftragnehmer:</td><td class="val">${settings.companyName}</td></tr>
+          <tr><td class="label">OTDR Messgerät:</td><td class="val">${otdrDeviceModelEsc || '–'}</td></tr>
+          <tr><td class="label">Auftragnehmer:</td><td class="val">${companyNameEsc}</td></tr>
           <tr><td class="label">Messtechniker:</td><td class="val">${effectiveTech}</td></tr>
           <tr><td class="label">Wellenlänge / Puls:</td><td class="val">${sorData.wavelength} · ${sorData.pulseWidth}</td></tr>
           <tr><td class="label">Brechungsindex / BC:</td><td class="val">n = ${sorData.refractiveIndex} · BC = ${sorData.backscatter}</td></tr>
-          <tr><td class="label">Vor- / Nachlauf:</td><td class="val">${settings.launchFiber}</td></tr>
+          <tr><td class="label">Vor- / Nachlauf:</td><td class="val">${launchFiberEsc}</td></tr>
         </table>
       </div>
     </div>
@@ -335,7 +365,7 @@ export class PdfExporter {
     </div>
     <div class="stamp-box">
       <div class="stamp-inner">
-        <div class="stamp-title">${settings.companyName} Konformität</div>
+        <div class="stamp-title">${companyNameEsc} Konformität</div>
         <svg width="16" height="16" viewBox="0 0 16 16" style="margin: 2px 0;">
           <circle cx="8" cy="8" r="7" fill="none" stroke="#15803d" stroke-width="1"/>
           <path d="M4.5 8.2 L7 10.7 L11.5 5.5" fill="none" stroke="#15803d" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
@@ -349,7 +379,7 @@ export class PdfExporter {
   <div class="graph-box">
     <div class="graph-header">
       <span>4. OTDR Signalkurve · 1310 nm</span>
-      <span>Auflösung: ${sorData.resolution ? sorData.resolution.toFixed(2) : '0.32'} m · Messdatei: ${customer.sorFileName || `Job_${customer.id}.sor`}</span>
+      <span>Auflösung: ${sorData.resolution ? sorData.resolution.toFixed(2) : '0.32'} m · Messdatei: ${sorFileNameEsc}</span>
     </div>
     <svg viewBox="0 0 740 140" style="width:100%; height:126px; display:block; background:#ffffff;">
       <!-- plot area frame -->
@@ -429,7 +459,7 @@ export class PdfExporter {
           <tr>
             <td style="font-weight: 700;">#${ev.nr}</td>
             <td style="font-weight: 600; font-family: monospace;">${(typeof ev.distance === 'number' ? (ev.distance > 10 ? ev.distance : ev.distance * 1000) : 0).toFixed(1)} m</td>
-            <td><strong>${ev.type || 'Ereignis'}</strong></td>
+            <td><strong>${esc(ev.type || 'Ereignis')}</strong></td>
             <td style="font-weight: 700; color: ${ev.loss > settings.maxLossConnector ? '#dc2626' : '#0f172a'};">${typeof ev.loss === 'number' ? ev.loss.toFixed(2) + ' dB' : '0.00 dB'}</td>
             <td style="color: #64748b;">${ev.type?.includes('Steck') ? `≤ ${settings.maxLossConnector.toFixed(2)} dB` : `≤ ${settings.maxLossSplice.toFixed(2)} dB`}</td>
             <td style="font-family: monospace;">${ev.reflectance !== null && ev.reflectance !== undefined && ev.reflectance !== 0 ? (typeof ev.reflectance === 'number' ? ev.reflectance.toFixed(1) : ev.reflectance) + ' dB' : '–'}</td>
@@ -444,7 +474,7 @@ export class PdfExporter {
   </div>
 
   <div style="font-size: 5.8pt; color: #64748b; margin-top: 2px; line-height: 1.2;">
-    <strong>Prüfbescheinigung:</strong> Die optische OTDR-Messung wurde fachgerecht mit kalibrierten Präzisionsmessgeräten nach DIN EN 50346 und den Vorgaben der <strong>${settings.providerName}</strong> durchgeführt. Alle Dämpfungswerte und Reflexionen unterschreiten die maximal zulässigen Grenzwerte. Die Glasfaserstrecke ist mängelfrei betriebsbereit.
+    <strong>Prüfbescheinigung:</strong> Die optische OTDR-Messung wurde fachgerecht mit kalibrierten Präzisionsmessgeräten nach DIN EN 50346 und den Vorgaben der <strong>${providerNameEsc}</strong> durchgeführt. Alle Dämpfungswerte und Reflexionen unterschreiten die maximal zulässigen Grenzwerte. Die Glasfaserstrecke ist mängelfrei betriebsbereit.
   </div>
 
   <div class="sign-grid">
@@ -457,7 +487,7 @@ export class PdfExporter {
       </div>
     </div>
     <div class="sign-col">
-      <div><strong>Abnahme / ${settings.providerName} / Bauleiter:</strong></div>
+      <div><strong>Abnahme / ${providerNameEsc} / Bauleiter:</strong></div>
       <div class="sign-line"></div>
       <div class="sign-caption">
         <span>Name in Druckbuchstaben</span>
