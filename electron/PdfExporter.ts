@@ -5,6 +5,10 @@ import type { CustomerItem, AppSettings } from './CustomerStore';
 
 export class PdfExporter {
   public static async generateSinglePdf(customer: CustomerItem, settings: AppSettings, targetPath: string): Promise<string> {
+    if (!customer.sorData) {
+      throw new Error('Keine OTDR-Messung für diesen Kunden vorhanden - PDF kann nicht erstellt werden.');
+    }
+
     const win = new BrowserWindow({
       show: false,
       width: 800,
@@ -26,22 +30,7 @@ export class PdfExporter {
     const effectiveDate = overrides.date || (customer.measuredAt ? new Date(customer.measuredAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : new Date().toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }));
     const effectiveTime = overrides.time || (customer.measuredAt ? new Date(customer.measuredAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr' : new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr');
 
-    const sorData = customer.sorData || {
-      wavelength: '1310.0 nm',
-      pulseWidth: '10 ns',
-      refractiveIndex: '1.4675',
-      backscatter: '-79.00 dB',
-      resolution: 0.32,
-      lengthMeters: 7974.1,
-      totalLossDb: 2.655,
-      avgLossDbPerKm: 0.333,
-      orlDb: 54.2,
-      events: [
-        { nr: 1, distance: 0.501, loss: 0.047, reflectance: -52.71, slope: 0.256, type: 'Steckverbinder (Vorlauf ➔ NVt)', status: 'PASS' },
-        { nr: 2, distance: 8.475, loss: 0.0, reflectance: -33.26, slope: 0.333, type: 'Faserende (HÜP SC/APC)', status: 'PASS' }
-      ],
-      tracePoints: []
-    };
+    const sorData = customer.sorData;
 
     const docNumber = `PROTO-${new Date().getFullYear()}-JOB${String(customer.id).padStart(4, '0')}`;
     const accent = settings.accentColor || '#3b82f6';

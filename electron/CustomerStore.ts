@@ -256,6 +256,8 @@ export class CustomerStore {
 
   // Reads keyword rules in priority order (specific -> generic) so a header like
   // "Faser-Nr." lands on fiberNumber, not on id, and "Kunden-Nr." lands on id, not on name.
+  // Keyword lists are deliberately broad (German + English + common abbreviations) since
+  // the app has to recognize whatever column headers a given company's export happens to use.
   private static detectColumns(headerCells: string[]): { colMap: Record<string, number>; score: number } {
     const colMap: Record<string, number> = {};
     let vornameCol = -1;
@@ -264,25 +266,28 @@ export class CustomerStore {
     headerCells.forEach((raw, idx) => {
       const val = (raw || '').trim().toLowerCase();
       if (!val) return;
-      const hasNumberWord = /\bnr\b|nr\.|nummer|\bid\b/.test(val);
+      const hasNumberWord = /\bnr\b|nr\.|nummer|\bid\b|\bnumber\b|\bno\.?\b/.test(val);
 
-      if (val.includes('faser')) {
+      if (val.includes('faser') || val.includes('fiber') || val.includes('strand')) {
         colMap['fiberNumber'] = idx;
-      } else if (val.includes('kabel')) {
+      } else if (val.includes('kabel') || val.includes('cable')) {
         colMap['cableId'] = idx;
-      } else if (val.includes('auftrag') || val.includes('ticket')) {
+      } else if (val.includes('auftrag') || val.includes('ticket') || val.includes('order') || val.includes('bestellung') || val.includes('vorgang')) {
         colMap['orderId'] = idx;
-      } else if (val.includes('nvt') || val.includes('segment') || val.includes('strecke') || val.includes('trasse')) {
+      } else if (val.includes('nvt') || val.includes('segment') || val.includes('strecke') || val.includes('trasse') || val.includes('abschnitt') || val.includes('route') || val.includes('section')) {
         colMap['segment'] = idx;
-      } else if (val.includes('plz') || val.includes('postleitzahl') || val.includes('ort') || val.includes('stadt') || val.includes('wohnort')) {
+      } else if (val.includes('plz') || val.includes('postleitzahl') || val.includes('zip') || val.includes('postal')) {
+        // Separate postal-code column - combined with the city column (if any) when building the record.
+        colMap['zip'] = idx;
+      } else if (val.includes('ort') || val.includes('stadt') || val.includes('wohnort') || val.includes('city') || val.includes('gemeinde') || val.includes('town')) {
         colMap['city'] = idx;
-      } else if (val.includes('stra') || val.includes('adresse')) {
+      } else if (val.includes('stra') || val.includes('street') || val.includes('adresse') || val.includes('address')) {
         colMap['street'] = idx;
-      } else if (val.includes('vorname')) {
+      } else if (val.includes('vorname') || val.includes('firstname') || val.includes('first name')) {
         vornameCol = idx;
-      } else if (val.includes('nachname') && !hasNumberWord) {
+      } else if ((val.includes('nachname') || val.includes('lastname') || val.includes('last name') || val.includes('surname')) && !hasNumberWord) {
         nachnameCol = idx;
-      } else if ((val.includes('name') || val.includes('kunde')) && !hasNumberWord) {
+      } else if ((val.includes('name') || val.includes('kunde') || val.includes('customer') || val.includes('client') || val.includes('kontakt') || val.includes('contact')) && !hasNumberWord) {
         // generic "Name"/"Kunde" column, but not "Kunden-Nr." (that's the job id)
         colMap['name'] = idx;
       } else if (hasNumberWord || val.includes('job')) {
@@ -322,7 +327,9 @@ export class CustomerStore {
     const combinedName = [vorname, nachname].filter(Boolean).join(' ').trim();
     const name = combinedName || get('name') || `Kunde #${id}`;
     const street = get('street') || 'Musterstraße 1';
-    const city = get('city') || '98248 Ort';
+    // zip and city may be separate columns (e.g. "PLZ" + "Ort") or one combined column -
+    // either way this ends up as "12345 Musterstadt".
+    const city = [get('zip'), get('city')].filter(Boolean).join(' ').trim() || '98248 Ort';
     const segment = get('segment') || `NVt ➔ HÜP ${name}`;
     const cableId = get('cableId') || `K-JOB-${id}`;
     const fiberNrRaw = get('fiberNumber');
