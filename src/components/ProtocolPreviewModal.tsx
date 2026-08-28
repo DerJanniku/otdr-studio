@@ -44,26 +44,11 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
     onSaveOverride(updated);
   };
 
-  const sor = customer.sorData || {
-    wavelength: '1310.0 nm',
-    pulseWidth: '10 ns',
-    refractiveIndex: '1.4675',
-    backscatter: '-79.00 dB',
-    resolution: 0.32,
-    lengthMeters: 7974.1,
-    totalLossDb: 2.655,
-    avgLossDbPerKm: 0.333,
-    orlDb: 54.2,
-    events: [
-      { nr: 1, distance: 0.501, loss: 0.047, reflectance: -52.71, slope: 0.256, type: 'Steckverbinder (Vorlauf ➔ NVt)', status: 'PASS' },
-      { nr: 2, distance: 8.475, loss: 0.0, reflectance: -33.26, slope: 0.333, type: 'Faserende (HÜP SC/APC)', status: 'PASS' }
-    ],
-    tracePoints: []
-  };
+  const sor = customer.sorData;
 
   // Plot area of the trace chart: x in [46, 718], y in [24, 96] (viewBox 0 0 740 140)
   let svgPolyline = '';
-  if (sor.tracePoints && sor.tracePoints.length > 5) {
+  if (sor?.tracePoints && sor.tracePoints.length > 5) {
     const pts = sor.tracePoints;
     const minP = Math.min(...pts);
     const maxP = Math.max(...pts);
@@ -73,7 +58,7 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
       const y = 96 - ((p - minP) / rangeP) * 72;
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     }).join(' ');
-  } else {
+  } else if (sor) {
     svgPolyline = '46,34 100,37 100,27 104,39 240,52 240,55 400,66 400,69 560,80 560,30 564,84 630,88 630,28 634,90 718,92';
   }
 
@@ -109,9 +94,11 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
                 Parameter anpassen
               </button>
             </div>
-            <button 
-              style={styles.btnPdf}
-              onClick={() => onGeneratePdf({ ...customer, customOverrides: formData })}
+            <button
+              style={customer.sorData ? styles.btnPdf : { ...styles.btnPdf, opacity: 0.4, cursor: 'not-allowed' }}
+              onClick={() => customer.sorData && onGeneratePdf({ ...customer, customOverrides: formData })}
+              disabled={!customer.sorData}
+              title={customer.sorData ? undefined : 'Erst möglich, sobald eine OTDR-Messung (.sor) zugeordnet wurde'}
             >
               PDF exportieren &amp; öffnen
             </button>
@@ -200,6 +187,16 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
                   Änderungen speichern
                 </button>
               </div>
+            </div>
+          ) : !sor ? (
+            <div style={styles.noDataPlaceholder}>
+              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                Noch keine OTDR-Messung zugeordnet
+              </h3>
+              <p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', marginTop: '0.4rem', maxWidth: '340px' }}>
+                Für diesen Kunden liegt noch keine .sor-Datei vor. Bitte zuerst den USB-Stick / Messordner
+                scannen - eine Protokoll-Vorschau oder ein PDF kann erst danach mit echten Messwerten erstellt werden.
+              </p>
             </div>
           ) : (
             /* Live A4 DIN protocol simulator, styled with the active company profile */
@@ -556,6 +553,15 @@ const styles: Record<string, React.CSSProperties> = {
   previewContainer: {
     display: 'flex',
     justifyContent: 'center',
+    width: '100%',
+  },
+  noDataPlaceholder: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    textAlign: 'center',
+    padding: '4rem 2rem',
     width: '100%',
   },
   a4Page: {

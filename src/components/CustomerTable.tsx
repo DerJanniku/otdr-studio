@@ -94,10 +94,16 @@ export function CustomerTable({ customers, onSelectCustomer, onGeneratePdf }: Cu
                     >
                       Vorschau / Edit
                     </button>
-                    <button 
-                      style={{ ...styles.btnAction, backgroundColor: 'var(--color-primary)', color: '#fff', borderColor: 'var(--color-primary)' }}
-                      onClick={() => onGeneratePdf(c)}
-                      title="Offizielles 1-Seiten DIN-PDF direkt erstellen &amp; öffnen"
+                    <button
+                      style={{
+                        ...styles.btnAction,
+                        ...(isMatched
+                          ? { backgroundColor: 'var(--color-primary)', color: '#fff', borderColor: 'var(--color-primary)' }
+                          : { opacity: 0.4, cursor: 'not-allowed' }),
+                      }}
+                      onClick={() => isMatched && onGeneratePdf(c)}
+                      disabled={!isMatched}
+                      title={isMatched ? 'Offizielles 1-Seiten DIN-PDF direkt erstellen & öffnen' : 'Erst möglich, sobald eine OTDR-Messung (.sor) zugeordnet wurde'}
                     >
                       PDF öffnen
                     </button>

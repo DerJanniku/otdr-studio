@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { CustomerStore, type AppSettings } from './CustomerStore';
+import { CustomerStore, type AppSettings, type CustomerItem } from './CustomerStore';
 import { SorMatcher } from './SorMatcher';
 import { PdfExporter } from './PdfExporter';
 import { UsbWatcher } from './UsbWatcher';
@@ -11,8 +11,29 @@ app.setName('OTDR Studio');
 let mainWindow: BrowserWindow | null = null;
 const customerStore = new CustomerStore();
 
+// Copies each newly matched job's raw .sor file(s) into a local archive folder and
+// repoints sorFilePath at that copy, so the USB stick can be wiped/reused for the
+// next site without losing the original measurement file.
+function archiveRawSorFiles(customers: CustomerItem[], matchedIds: number[]) {
+  const archiveRoot = path.join(app.getPath('documents'), 'OTDR_Protokolle', 'Rohdaten');
+  for (const id of matchedIds) {
+    const customer = customers.find(c => c.id === id);
+    if (!customer?.sorFilePath || !fs.existsSync(customer.sorFilePath)) continue;
+    try {
+      const jobDir = path.join(archiveRoot, `Job_${String(id).padStart(3, '0')}`);
+      fs.mkdirSync(jobDir, { recursive: true });
+      const destPath = path.join(jobDir, path.basename(customer.sorFilePath));
+      fs.copyFileSync(customer.sorFilePath, destPath);
+      customer.sorFilePath = destPath;
+    } catch (err) {
+      console.error(`Failed to archive raw SOR file for job ${id}:`, err);
+    }
+  }
+}
+
 const usbWatcher = new UsbWatcher((volumePath, volumeName) => {
   const scanRes = SorMatcher.scanAndMatch(volumePath, customerStore.getCustomers());
+  archiveRawSorFiles(scanRes.updatedCustomers, scanRes.matchedIds);
   customerStore.saveCustomers(scanRes.updatedCustomers);
   mainWindow?.webContents.send('usb-scan-result', {
     volumeName,
@@ -104,6 +125,7 @@ app.whenReady().then(() => {
 
     const folderPath = res.filePaths[0];
     const scanRes = SorMatcher.scanAndMatch(folderPath, customerStore.getCustomers());
+    archiveRawSorFiles(scanRes.updatedCustomers, scanRes.matchedIds);
     customerStore.saveCustomers(scanRes.updatedCustomers);
 
     return {
@@ -121,6 +143,7 @@ app.whenReady().then(() => {
       return { success: false, error: `Ordner existiert nicht: ${folderPath}` };
     }
     const scanRes = SorMatcher.scanAndMatch(folderPath, customerStore.getCustomers());
+    archiveRawSorFiles(scanRes.updatedCustomers, scanRes.matchedIds);
     customerStore.saveCustomers(scanRes.updatedCustomers);
 
     return {
@@ -155,6 +178,9 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('generate-pdf-protocol', async (_e, customer, customSettings, openAfter = true) => {
+    if (!customer.sorData) {
+      return { success: false, error: 'Für diesen Kunden liegt noch keine OTDR-Messung vor. Bitte zuerst eine passende .sor-Datei zuordnen (USB-Stick scannen).' };
+    }
     try {
       const settings = customSettings || customerStore.getSettings();
       const nameSafe = (customer.customOverrides?.customerName || customer.customerName).replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -187,9 +213,10 @@ app.whenReady().then(() => {
       fs.mkdirSync(deliveryDir, { recursive: true });
 
       const allCustomers = customerStore.getCustomers();
-      const targetCustomers = customerIds && customerIds.length > 0
+      const targetCustomers = (customerIds && customerIds.length > 0
         ? allCustomers.filter(c => customerIds.includes(c.id))
-        : allCustomers.filter(c => c.status === 'matched' || c.status === 'exported');
+        : allCustomers.filter(c => c.status === 'matched' || c.status === 'exported')
+      ).filter(c => !!c.sorData);
 
       let exportedCount = 0;
       for (const cust of targetCustomers) {

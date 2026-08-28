@@ -14,11 +14,18 @@ export class SorMatcher {
     const errors: string[] = [];
     const customerList = [...customers];
 
+    // Skip OS-generated housekeeping folders - on a real USB stick .Spotlight-V100
+    // alone can contain tens of thousands of files and make the recursive walk
+    // effectively never reach the actual job folders.
+    const SKIP_DIRS = new Set(['System Volume Information', '$RECYCLE.BIN', 'RECYCLER']);
+    const isSkippableDir = (name: string) => name.startsWith('.') || SKIP_DIRS.has(name);
+
     const findSorFiles = (dir: string): string[] => {
       let results: string[] = [];
       try {
         const list = fs.readdirSync(dir);
         for (const file of list) {
+          if (isSkippableDir(file)) continue;
           const full = path.join(dir, file);
           const stat = fs.statSync(full);
           if (stat && stat.isDirectory()) {
@@ -33,34 +40,45 @@ export class SorMatcher {
       return results;
     };
 
+    const scanRoot = path.resolve(dirPath);
     const sorFiles = findSorFiles(dirPath);
+
+    const matchFolderId = (folderName: string): number | null => {
+      const folderMatches = folderName.match(/(?:job|kunde|nr)?_?(\d+)/i);
+      if (folderMatches && folderMatches[1]) {
+        const parsedId = parseInt(folderMatches[1], 10);
+        if (parsedId >= 1) return parsedId;
+      }
+      return null;
+    };
+
+    // OTDR devices often name every file "Fiber001_1310nm.sor" regardless of job
+    // (001 = fiber/strand index, not a job id) and instead put each job's files
+    // into its own subfolder (e.g. a folder just called "3"). So when a file is
+    // nested one or more levels below the scanned root, the folder name is the
+    // more reliable signal and is tried before the filename.
+    const matchFileId = (fileName: string): number | null => {
+      const fileMatches = fileName.match(/(?:job|kunde|nr|faser|k|c)?_?(\d+)/i);
+      if (fileMatches && fileMatches[1]) {
+        const parsedId = parseInt(fileMatches[1], 10);
+        if (parsedId >= 1) return parsedId;
+      }
+      return null;
+    };
 
     for (const filePath of sorFiles) {
       try {
         const fileName = path.basename(filePath);
         const folderName = path.basename(path.dirname(filePath));
+        const isNested = path.resolve(path.dirname(filePath)) !== scanRoot;
         const buf = fs.readFileSync(filePath);
         const parsed = parseSor(new Uint8Array(buf));
 
-        let candidateId: number | null = null;
+        let candidateId: number | null = isNested
+          ? matchFolderId(folderName) ?? matchFileId(fileName)
+          : matchFileId(fileName) ?? matchFolderId(folderName);
 
-        // 1. From filename: e.g. "4.sor", "Job_4.sor", "004_1310.sor", "4_Mueller.sor", "Kunde_239.sor", "Faser_001.sor"
-        const fileMatches = fileName.match(/(?:job|kunde|nr|faser|k|c)?_?(\d+)/i);
-        if (fileMatches && fileMatches[1]) {
-          const parsedId = parseInt(fileMatches[1], 10);
-          if (parsedId >= 1) candidateId = parsedId;
-        }
-
-        // 2. From folder name: e.g. "4", "Job_4", "239_Schmidt"
-        if (!candidateId) {
-          const folderMatches = folderName.match(/(?:job|kunde|nr)?_?(\d+)/i);
-          if (folderMatches && folderMatches[1]) {
-            const parsedId = parseInt(folderMatches[1], 10);
-            if (parsedId >= 1) candidateId = parsedId;
-          }
-        }
-
-        // 3. From SOR Header GenParams ('cable ID', 'fiber ID', comments)
+        // Fall back to the SOR header ('cable ID', 'fiber ID', comments) if neither matched
         if (!candidateId && parsed.GenParams) {
           const combinedHeader = `${parsed.GenParams['cable ID'] || ''} ${parsed.GenParams['fiber ID'] || ''} ${parsed.GenParams.comments || ''}`;
           const headerMatches = combinedHeader.match(/(?:job|kunde|nr|id|faser)?_?\s*(\d+)/i);
