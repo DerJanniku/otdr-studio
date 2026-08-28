@@ -20,5 +20,6 @@ interface Window {
     getAppVersion: () => Promise<string>;
     isFirstRun: () => Promise<boolean>;
     checkForUpdates: () => Promise<{ hasUpdate: boolean; latestVersion?: string; url?: string }>;
+    onUsbDetected: (callback: (data: { volumeName: string; matchedCount: number; matchedIds: number[]; customers: any[] }) => void) => () => void;
   };
 }

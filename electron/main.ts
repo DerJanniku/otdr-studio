@@ -4,11 +4,23 @@ import * as fs from 'fs';
 import { CustomerStore, type AppSettings } from './CustomerStore';
 import { SorMatcher } from './SorMatcher';
 import { PdfExporter } from './PdfExporter';
+import { UsbWatcher } from './UsbWatcher';
 
 app.setName('OTDR Studio');
 
 let mainWindow: BrowserWindow | null = null;
 const customerStore = new CustomerStore();
+
+const usbWatcher = new UsbWatcher((volumePath, volumeName) => {
+  const scanRes = SorMatcher.scanAndMatch(volumePath, customerStore.getCustomers());
+  customerStore.saveCustomers(scanRes.updatedCustomers);
+  mainWindow?.webContents.send('usb-scan-result', {
+    volumeName,
+    matchedCount: scanRes.matchedCount,
+    matchedIds: scanRes.matchedIds,
+    customers: customerStore.getCustomers(),
+  });
+});
 
 function compareVersions(a: string, b: string): number {
   const pa = a.split('.').map(Number);
@@ -45,6 +57,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   createWindow();
+  usbWatcher.start();
 
   // IPC Handlers
   ipcMain.handle('get-customers', async () => {
@@ -237,5 +250,6 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  usbWatcher.stop();
   if (process.platform !== 'darwin') app.quit();
 });
