@@ -21,4 +21,9 @@ contextBridge.exposeInMainWorld('api', {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   isFirstRun: () => ipcRenderer.invoke('is-first-run'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  onUsbDetected: (callback: (data: any) => void) => {
+    const listener = (_event: unknown, data: any) => callback(data);
+    ipcRenderer.on('usb-scan-result', listener);
+    return () => ipcRenderer.removeListener('usb-scan-result', listener);
+  },
 });

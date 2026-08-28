@@ -62,6 +62,16 @@ export function App() {
     window.api?.checkForUpdates?.().then((res) => {
       if (res?.hasUpdate) setUpdateInfo({ latestVersion: res.latestVersion, url: res.url });
     });
+
+    const unsubscribeUsb = window.api?.onUsbDetected?.((data) => {
+      setCustomers(data.customers);
+      showToast(
+        data.matchedCount > 0
+          ? `USB-Stick "${data.volumeName}" erkannt: ${data.matchedCount} OTDR-Messung(en) automatisch zugeordnet.`
+          : `USB-Stick "${data.volumeName}" erkannt, aber keine passenden Job-IDs gefunden.`
+      );
+    });
+    return () => unsubscribeUsb?.();
   }, []);
 
   useEffect(() => {
