@@ -34,7 +34,7 @@ export class SorMatcher {
             results.push(full);
           }
         }
-      } catch (e) {
+      } catch {
         // ignore unreadable
       }
       return results;

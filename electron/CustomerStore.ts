@@ -107,19 +107,21 @@ export class CustomerStore {
       try {
         const raw = fs.readFileSync(this.settingsPath, 'utf-8');
         return { ...defaults, ...JSON.parse(raw) };
-      } catch (e) {
+      } catch {
         return defaults;
       }
     }
     return defaults;
   }
 
-  public saveSettings(newSettings: AppSettings) {
+  public saveSettings(newSettings: AppSettings): boolean {
     this.settings = newSettings;
     try {
       fs.writeFileSync(this.settingsPath, JSON.stringify(this.settings, null, 2), 'utf-8');
+      return true;
     } catch (e) {
       console.error('Failed to save settings.json:', e);
+      return false;
     }
   }
 
@@ -194,12 +196,14 @@ export class CustomerStore {
     return def;
   }
 
-  public saveCustomers(customers: CustomerItem[]) {
+  public saveCustomers(customers: CustomerItem[]): boolean {
     this.customers = customers;
     try {
       fs.writeFileSync(this.dataPath, JSON.stringify(this.customers, null, 2), 'utf-8');
+      return true;
     } catch (e) {
       console.error('Failed to save customers.json:', e);
+      return false;
     }
   }
 
@@ -207,12 +211,11 @@ export class CustomerStore {
     return this.customers;
   }
 
-  public updateCustomer(updated: CustomerItem) {
+  public updateCustomer(updated: CustomerItem): boolean {
     const idx = this.customers.findIndex(c => c.id === updated.id);
-    if (idx !== -1) {
-      this.customers[idx] = updated;
-      this.saveCustomers(this.customers);
-    }
+    if (idx === -1) return false;
+    this.customers[idx] = updated;
+    return this.saveCustomers(this.customers);
   }
 
   public getDefaultInitialCustomers(): CustomerItem[] {
@@ -445,7 +448,17 @@ export class CustomerStore {
       }
 
       if (imported.length > 0) {
-        imported.sort((a, b) => a.id - b.id);
+        // A duplicate job ID in the source file would otherwise silently orphan one of the
+        // rows (only the first match ever gets looked up again) - keep the last occurrence,
+        // matching how a spreadsheet correction further down the sheet is usually meant to win.
+        const byId = new Map<number, CustomerItem>();
+        for (const c of imported) byId.set(c.id, c);
+        const duplicateCount = imported.length - byId.size;
+        imported = Array.from(byId.values()).sort((a, b) => a.id - b.id);
+        if (duplicateCount > 0) {
+          warning = `${duplicateCount} doppelte Job-ID(s) in der Liste gefunden - jeweils die letzte Zeile wurde übernommen.${warning ? ' ' + warning : ''}`;
+        }
+
         this.saveCustomers(imported);
         return { success: true, count: imported.length, warning };
       } else {

@@ -86,13 +86,11 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('save-customers', async (_e, customers) => {
-    customerStore.saveCustomers(customers);
-    return true;
+    return customerStore.saveCustomers(customers);
   });
 
   ipcMain.handle('update-customer', async (_e, customer) => {
-    customerStore.updateCustomer(customer);
-    return true;
+    return customerStore.updateCustomer(customer);
   });
 
   ipcMain.handle('import-customer-file', async () => {
@@ -161,8 +159,7 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('save-app-settings', async (_e, settings: AppSettings) => {
-    customerStore.saveSettings(settings);
-    return true;
+    return customerStore.saveSettings(settings);
   });
 
   ipcMain.handle('get-setting-presets', async () => {
@@ -219,20 +216,26 @@ app.whenReady().then(() => {
       ).filter(c => !!c.sorData);
 
       let exportedCount = 0;
+      const failures: string[] = [];
       for (const cust of targetCustomers) {
-        const nameSafe = (cust.customOverrides?.customerName || cust.customerName).replace(/[^a-zA-Z0-9_-]/g, '_');
-        const fileName = `MTS2000_DIN_Protokoll_Job${String(cust.id).padStart(3, '0')}_${nameSafe}.pdf`;
-        const targetPath = path.join(deliveryDir, fileName);
+        try {
+          const nameSafe = (cust.customOverrides?.customerName || cust.customerName).replace(/[^a-zA-Z0-9_-]/g, '_');
+          const fileName = `MTS2000_DIN_Protokoll_Job${String(cust.id).padStart(3, '0')}_${nameSafe}.pdf`;
+          const targetPath = path.join(deliveryDir, fileName);
 
-        await PdfExporter.generateSinglePdf(cust, settings, targetPath);
-        cust.status = 'exported';
-        customerStore.updateCustomer(cust);
-        exportedCount++;
+          await PdfExporter.generateSinglePdf(cust, settings, targetPath);
+          cust.status = 'exported';
+          customerStore.updateCustomer(cust);
+          exportedCount++;
+        } catch (custErr: any) {
+          console.error(`Failed to export PDF for job ${cust.id}:`, custErr);
+          failures.push(`Job #${cust.id}: ${custErr.message}`);
+        }
       }
 
-      await shell.openPath(deliveryDir);
+      if (exportedCount > 0) await shell.openPath(deliveryDir);
 
-      return { success: true, count: exportedCount, folderPath: deliveryDir };
+      return { success: exportedCount > 0, count: exportedCount, folderPath: deliveryDir, error: failures.length > 0 ? failures.join('; ') : undefined };
     } catch (err: any) {
       console.error('Batch export failed:', err);
       return { success: false, error: err.message };
@@ -266,7 +269,7 @@ app.whenReady().then(() => {
       const currentVersion = app.getVersion();
       const hasUpdate = latestVersion !== '' && compareVersions(latestVersion, currentVersion) > 0;
       return { hasUpdate, latestVersion, url: data.html_url };
-    } catch (err) {
+    } catch {
       return { hasUpdate: false };
     }
   });

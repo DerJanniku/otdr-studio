@@ -82,7 +82,11 @@ export function App() {
 
   const handleWizardFinish = async (newSettings: AppSettings) => {
     if (window.api?.saveAppSettings) {
-      await window.api.saveAppSettings(newSettings);
+      const ok = await window.api.saveAppSettings(newSettings);
+      if (!ok) {
+        alert('Einstellungen konnten nicht gespeichert werden (Schreibfehler). Bitte erneut versuchen.');
+        return;
+      }
     }
     if (window.api?.saveSettingPreset && newSettings.companyName.trim()) {
       await window.api.saveSettingPreset(newSettings.companyName.trim(), newSettings);
@@ -176,7 +180,11 @@ export function App() {
 
   const handleSaveCustomerOverride = async (updated: CustomerItem) => {
     if (window.api?.updateCustomer) {
-      await window.api.updateCustomer(updated);
+      const ok = await window.api.updateCustomer(updated);
+      if (!ok) {
+        alert('Änderungen konnten nicht gespeichert werden (Schreibfehler). Bitte erneut versuchen.');
+        return;
+      }
       await loadData();
       setSelectedCustomer(updated);
       showToast('Änderungen gespeichert.');
@@ -185,7 +193,11 @@ export function App() {
 
   const handleSaveSettings = async (newSettings: AppSettings) => {
     if (window.api?.saveAppSettings) {
-      await window.api.saveAppSettings(newSettings);
+      const ok = await window.api.saveAppSettings(newSettings);
+      if (!ok) {
+        alert('Einstellungen konnten nicht gespeichert werden (Schreibfehler). Bitte erneut versuchen.');
+        return;
+      }
       if (window.api?.saveSettingPreset && newSettings.companyName.trim()) {
         await window.api.saveSettingPreset(newSettings.companyName.trim(), newSettings);
       }
