@@ -49,4 +49,8 @@ export interface AppSettings {
   signatureBase64?: string;
   accentColor: string;
   themeMode: 'dark' | 'light';
+  hideProvider?: boolean;
+  hideContractor?: boolean;
+  hideOrderId?: boolean;
+  launchFiberOnly?: boolean;
 }

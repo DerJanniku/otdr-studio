@@ -64,9 +64,55 @@ export class PdfExporter {
     const colorCodeEsc = esc(customer.colorCode || 'Rot (DIN 47100)');
     const fiberTypeEsc = esc(customer.fiberType || 'Singlemode ITU-T G.657.A1 / G.652D (9/125 µm)');
     const sorFileNameEsc = esc(customer.sorFileName || `Job_${customer.id}.sor`);
+
+    const hideProvider = settings.hideProvider || !settings.providerName;
+    const hideContractor = settings.hideContractor || !settings.companyName;
+    const hideOrderId = settings.hideOrderId || !customer.orderId;
+    const isLaunchOnly = settings.launchFiberOnly || (settings.launchFiber && !settings.launchFiber.toLowerCase().includes('nachlauf'));
+
+    let displayLaunchFiber = launchFiberEsc;
+    let launchFiberLabel = 'Vor- / Nachlauf:';
+    if (isLaunchOnly) {
+      launchFiberLabel = 'Vorlauffaser:';
+      if (displayLaunchFiber.toLowerCase().includes('vorlauf')) {
+        displayLaunchFiber = esc(settings.launchFiber.split(/[·•]/)[0].trim());
+      }
+    }
+
     const brandHtml = settings.logoBase64
       ? `<img src="${settings.logoBase64}" class="brand-img" alt="${companyNameEsc}" />`
-      : `<div style="font-weight:800; font-size:11pt; color:${accent};">${companyNameEsc}</div>`;
+      : (hideContractor ? '<div style="height:32px;"></div>' : `<div style="font-weight:800; font-size:11pt; color:${accent};">${companyNameEsc}</div>`);
+
+    const headerSubtextHtml = hideProvider
+      ? ''
+      : `<div class="header-subtext">Auftraggeber: <strong>${providerNameEsc}</strong></div>`;
+
+    const providerRowHtml = hideProvider
+      ? ''
+      : `<tr><td class="label">Auftraggeber:</td><td class="val" style="color:${accent}; font-weight:800;">${providerNameEsc}</td></tr>`;
+
+    const orderIdRowHtml = hideOrderId
+      ? ''
+      : `<tr><td class="label">Auftrags-Nr.:</td><td class="val" style="color:${accent};">${orderIdEsc}</td></tr>`;
+
+    const contractorRowHtml = hideContractor
+      ? ''
+      : `<tr><td class="label">Auftragnehmer:</td><td class="val">${companyNameEsc}</td></tr>`;
+
+    const stampTitle = hideContractor ? 'KONFORMITÄT' : `${companyNameEsc} Konformität`;
+    const pruefText = hideProvider
+      ? 'den anerkannten Regeln der Technik'
+      : `den Vorgaben der <strong>${providerNameEsc}</strong>`;
+
+    const techTitle = hideContractor ? 'Prüfer / Messtechniker:' : 'Prüfer / Auftragnehmer:';
+    const clientTitle = hideProvider ? 'Abnahme / Bauleitung:' : `Abnahme / ${providerNameEsc} / Bauleiter:`;
+
+    const filteredEvents = (sorData.events || []).filter((ev: any) => {
+      if (isLaunchOnly && ev.type && ev.type.toLowerCase().includes('nachlauf')) {
+        return false;
+      }
+      return true;
+    });
 
     // Plot area of the trace chart: x in [46, 718], y in [24, 96] (viewBox 0 0 740 140)
     let svgPolyline = '';
@@ -289,7 +335,7 @@ export class PdfExporter {
     <tr>
       <td style="vertical-align: middle; width: 55%;">
         ${brandHtml}
-        <div class="header-subtext">Auftraggeber: <strong>${providerNameEsc}</strong></div>
+        ${headerSubtextHtml}
       </td>
       <td class="doc-badge" style="vertical-align: middle; width: 45%;">
         <div class="doc-title">OTDR-ABNAHMEPROTOKOLL</div>
@@ -308,9 +354,9 @@ export class PdfExporter {
       <div class="card">
         <div class="card-header">1. Auftrags- &amp; Standortdaten (Job #${customer.id})</div>
         <table class="data-table">
-          <tr><td class="label">Auftraggeber:</td><td class="val" style="color:${accent}; font-weight:800;">${providerNameEsc}</td></tr>
+          ${providerRowHtml}
           <tr><td class="label">Projekt / Cluster:</td><td class="val">${projectClusterEsc}</td></tr>
-          <tr><td class="label">Auftrags-Nr.:</td><td class="val" style="color:${accent};">${orderIdEsc}</td></tr>
+          ${orderIdRowHtml}
           <tr><td class="label">Endkunde / Anschluss:</td><td class="val" style="font-weight:800; font-size:7.2pt;">${effectiveName}</td></tr>
           <tr><td class="label">Adresse / Standort:</td><td class="val">${effectiveStreet}, ${effectiveCity}</td></tr>
           <tr><td class="label">Mess-Abschnitt:</td><td class="val">${effectiveSegment}</td></tr>
@@ -326,11 +372,11 @@ export class PdfExporter {
         <div class="card-header">2. Messgeräte- &amp; Parameter-Setup (Kalibriert)</div>
         <table class="data-table">
           <tr><td class="label">OTDR Messgerät:</td><td class="val">${otdrDeviceModelEsc || '–'}</td></tr>
-          <tr><td class="label">Auftragnehmer:</td><td class="val">${companyNameEsc}</td></tr>
+          ${contractorRowHtml}
           <tr><td class="label">Messtechniker:</td><td class="val">${effectiveTech}</td></tr>
           <tr><td class="label">Wellenlänge / Puls:</td><td class="val">${sorData.wavelength} · ${sorData.pulseWidth}</td></tr>
           <tr><td class="label">Brechungsindex / BC:</td><td class="val">n = ${sorData.refractiveIndex} · BC = ${sorData.backscatter}</td></tr>
-          <tr><td class="label">Vor- / Nachlauf:</td><td class="val">${launchFiberEsc}</td></tr>
+          <tr><td class="label">${launchFiberLabel}</td><td class="val">${displayLaunchFiber}</td></tr>
         </table>
       </div>
     </div>
@@ -365,7 +411,7 @@ export class PdfExporter {
     </div>
     <div class="stamp-box">
       <div class="stamp-inner">
-        <div class="stamp-title">${companyNameEsc} Konformität</div>
+        <div class="stamp-title">${stampTitle}</div>
         <svg width="16" height="16" viewBox="0 0 16 16" style="margin: 2px 0;">
           <circle cx="8" cy="8" r="7" fill="none" stroke="#15803d" stroke-width="1"/>
           <path d="M4.5 8.2 L7 10.7 L11.5 5.5" fill="none" stroke="#15803d" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
@@ -411,7 +457,7 @@ export class PdfExporter {
       <polyline fill="none" stroke="#1e293b" stroke-width="1.1" points="${svgPolyline}" />
 
       ${(() => {
-        const events = sorData.events || [];
+        const events = filteredEvents;
         // Sort by x-position so the alternating label rows only need to dodge left/right neighbours, not chart order.
         const withPos = events.map((ev: any, idx: number) => {
           const evDistM = (typeof ev.distance === 'number' ? (ev.distance > 10 ? ev.distance : ev.distance * 1000) : 0);
@@ -455,7 +501,7 @@ export class PdfExporter {
         </tr>
       </thead>
       <tbody>
-        ${(sorData.events || []).map((ev: any) => `
+        ${filteredEvents.map((ev: any) => `
           <tr>
             <td style="font-weight: 700;">#${ev.nr}</td>
             <td style="font-weight: 600; font-family: monospace;">${(typeof ev.distance === 'number' ? (ev.distance > 10 ? ev.distance : ev.distance * 1000) : 0).toFixed(1)} m</td>
@@ -474,12 +520,12 @@ export class PdfExporter {
   </div>
 
   <div style="font-size: 5.8pt; color: #64748b; margin-top: 2px; line-height: 1.2;">
-    <strong>Prüfbescheinigung:</strong> Die optische OTDR-Messung wurde fachgerecht mit kalibrierten Präzisionsmessgeräten nach DIN EN 50346 und den Vorgaben der <strong>${providerNameEsc}</strong> durchgeführt. Alle Dämpfungswerte und Reflexionen unterschreiten die maximal zulässigen Grenzwerte. Die Glasfaserstrecke ist mängelfrei betriebsbereit.
+    <strong>Prüfbescheinigung:</strong> Die optische OTDR-Messung wurde fachgerecht mit kalibrierten Präzisionsmessgeräten nach DIN EN 50346 und ${pruefText} durchgeführt. Alle Dämpfungswerte und Reflexionen unterschreiten die maximal zulässigen Grenzwerte. Die Glasfaserstrecke ist mängelfrei betriebsbereit.
   </div>
 
   <div class="sign-grid">
     <div class="sign-col">
-      <div><strong>Prüfer / Auftragnehmer:</strong></div>
+      <div><strong>${techTitle}</strong></div>
       <div class="sign-line">${settings.signatureBase64 ? `<img src="${settings.signatureBase64}" alt="Unterschrift" />` : ''}</div>
       <div class="sign-caption">
         <span>${effectiveTech}</span>
@@ -487,7 +533,7 @@ export class PdfExporter {
       </div>
     </div>
     <div class="sign-col">
-      <div><strong>Abnahme / ${providerNameEsc} / Bauleiter:</strong></div>
+      <div><strong>${clientTitle}</strong></div>
       <div class="sign-line"></div>
       <div class="sign-caption">
         <span>Name in Druckbuchstaben</span>

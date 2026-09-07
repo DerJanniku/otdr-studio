@@ -26,6 +26,24 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
     fiberNumber: customer.customOverrides?.fiberNumber ?? customer.fiberNumber ?? 1,
   });
 
+  const hideProvider = settings.hideProvider || !settings.providerName;
+  const hideContractor = settings.hideContractor || !settings.companyName;
+  const hideOrderId = settings.hideOrderId || !customer.orderId;
+  const isLaunchOnly = settings.launchFiberOnly || (settings.launchFiber && !settings.launchFiber.toLowerCase().includes('nachlauf'));
+
+  let displayLaunchFiber = settings.launchFiber;
+  let launchFiberLabel = 'Vor- / Nachlauf:';
+  if (isLaunchOnly) {
+    launchFiberLabel = 'Vorlauffaser:';
+    if (displayLaunchFiber.toLowerCase().includes('vorlauf')) {
+      displayLaunchFiber = settings.launchFiber.split(/[·•]/)[0].trim();
+    }
+  }
+
+  const stampTitle = hideContractor ? 'KONFORMITÄT' : `${settings.companyName} Konformität`;
+  const techTitle = hideContractor ? 'Prüfer / Messtechniker:' : 'Prüfer / Auftragnehmer:';
+  const clientTitle = hideProvider ? 'Abnahme / Bauleitung:' : `Abnahme / ${settings.providerName} / Bauleiter:`;
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -208,11 +226,13 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
                     {settings.logoBase64 ? (
                       <img src={settings.logoBase64} alt={settings.companyName} style={{ height: '30px', display: 'block' }} />
                     ) : (
-                      <div style={{ fontWeight: 800, fontSize: '10pt', color: accent }}>{settings.companyName}</div>
+                      hideContractor ? <div style={{ height: '30px' }}></div> : <div style={{ fontWeight: 800, fontSize: '10pt', color: accent }}>{settings.companyName}</div>
                     )}
-                    <div style={{ fontSize: '6pt', color: '#475569', marginTop: '2px' }}>
-                      Auftraggeber: <strong>{settings.providerName}</strong>
-                    </div>
+                    {!hideProvider && (
+                      <div style={{ fontSize: '6pt', color: '#475569', marginTop: '2px' }}>
+                        Auftraggeber: <strong>{settings.providerName}</strong>
+                      </div>
+                    )}
                   </div>
                   <div style={{ textAlign: 'right', width: '45%' }}>
                     <div style={{ fontSize: '10pt', fontWeight: 800, color: accent, letterSpacing: '0.3px' }}>OTDR-ABNAHMEPROTOKOLL</div>
@@ -229,9 +249,9 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
                     <div style={a4CardHeaderStyle}>1. Auftrags- &amp; Standortdaten (Job #{customer.id})</div>
                     <table style={styles.a4Table}>
                       <tbody>
-                        <tr><td style={styles.a4Label}>Auftraggeber:</td><td style={{ ...styles.a4Val, color: accent }}>{settings.providerName}</td></tr>
+                        {!hideProvider && <tr><td style={styles.a4Label}>Auftraggeber:</td><td style={{ ...styles.a4Val, color: accent }}>{settings.providerName}</td></tr>}
                         <tr><td style={styles.a4Label}>Projekt / Cluster:</td><td style={styles.a4Val}>{settings.projectCluster}</td></tr>
-                        <tr><td style={styles.a4Label}>Auftrags-Nr.:</td><td style={{ ...styles.a4Val, color: accent }}>{customer.orderId}</td></tr>
+                        {!hideOrderId && <tr><td style={styles.a4Label}>Auftrags-Nr.:</td><td style={{ ...styles.a4Val, color: accent }}>{customer.orderId}</td></tr>}
                         <tr><td style={styles.a4Label}>Endkunde / Anschluss:</td><td style={{ ...styles.a4Val, fontWeight: 800 }}>{formData.customerName}</td></tr>
                         <tr><td style={styles.a4Label}>Adresse / Standort:</td><td style={styles.a4Val}>{formData.street}, {formData.city}</td></tr>
                         <tr><td style={styles.a4Label}>Mess-Abschnitt:</td><td style={styles.a4Val}>{formData.segment}</td></tr>
@@ -245,11 +265,11 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
                     <table style={styles.a4Table}>
                       <tbody>
                         <tr><td style={styles.a4Label}>OTDR Messgerät:</td><td style={styles.a4Val}>{settings.otdrDeviceModel || '–'}</td></tr>
-                        <tr><td style={styles.a4Label}>Auftragnehmer:</td><td style={styles.a4Val}>{settings.companyName}</td></tr>
+                        {!hideContractor && <tr><td style={styles.a4Label}>Auftragnehmer:</td><td style={styles.a4Val}>{settings.companyName}</td></tr>}
                         <tr><td style={styles.a4Label}>Messtechniker:</td><td style={styles.a4Val}>{formData.technicianName}</td></tr>
                         <tr><td style={styles.a4Label}>Wellenlänge / Puls:</td><td style={styles.a4Val}>{sor.wavelength} · {sor.pulseWidth}</td></tr>
                         <tr><td style={styles.a4Label}>Brechungsindex / BC:</td><td style={styles.a4Val}>n = {sor.refractiveIndex} · BC = {sor.backscatter}</td></tr>
-                        <tr><td style={styles.a4Label}>Vor- / Nachlauf:</td><td style={styles.a4Val}>{settings.launchFiber}</td></tr>
+                        <tr><td style={styles.a4Label}>{launchFiberLabel}</td><td style={styles.a4Val}>{displayLaunchFiber}</td></tr>
                       </tbody>
                     </table>
                   </div>
@@ -285,7 +305,7 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
 
                   <div style={styles.a4Stamp}>
                     <div style={styles.a4StampInner}>
-                      <div style={{ fontSize: '5.5pt', fontWeight: 700, color: '#15803d', textTransform: 'uppercase' }}>{settings.companyName} Konformität</div>
+                      <div style={{ fontSize: '5.5pt', fontWeight: 700, color: '#15803d', textTransform: 'uppercase' }}>{stampTitle}</div>
                       <svg width="14" height="14" viewBox="0 0 16 16" style={{ margin: '2px 0' }}>
                         <circle cx="8" cy="8" r="7" fill="none" stroke="#15803d" strokeWidth="1" />
                         <path d="M4.5 8.2 L7 10.7 L11.5 5.5" fill="none" stroke="#15803d" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
@@ -322,6 +342,7 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
                     <polyline fill="none" stroke="#1e293b" strokeWidth="1.1" points={svgPolyline} />
 
                     {[...(sor.events || [])]
+                      .filter((ev: any) => !(isLaunchOnly && ev.type?.toLowerCase().includes('nachlauf')))
                       .map((ev: any) => {
                         const evDistM = (typeof ev.distance === 'number' ? (ev.distance > 10 ? ev.distance : ev.distance * 1000) : 0);
                         const totalM = sor.lengthMeters || 8000;
@@ -365,7 +386,9 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
                       </tr>
                     </thead>
                     <tbody>
-                      {sor.events.map((ev: any) => (
+                      {sor.events
+                        .filter((ev: any) => !(isLaunchOnly && ev.type?.toLowerCase().includes('nachlauf')))
+                        .map((ev: any) => (
                         <tr key={ev.nr}>
                           <td style={{ fontWeight: 700 }}>#{ev.nr}</td>
                           <td style={{ fontFamily: 'monospace' }}>{(typeof ev.distance === 'number' ? (ev.distance > 10 ? ev.distance : ev.distance * 1000) : 0).toFixed(1)} m</td>
@@ -384,12 +407,12 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
 
                 {/* 6. Footer & Signatures */}
                 <div style={{ fontSize: '5.5pt', color: '#64748b', marginTop: '2px', lineHeight: 1.2 }}>
-                  <strong>Prüfbescheinigung:</strong> Die optische OTDR-Messung wurde fachgerecht mit kalibrierten Präzisionsmessgeräten nach DIN EN 50346 und den Vorgaben der <strong>{settings.providerName}</strong> durchgeführt. Alle Dämpfungswerte und Reflexionen unterschreiten die maximal zulässigen Grenzwerte. Die Glasfaserstrecke ist mängelfrei betriebsbereit.
+                  <strong>Prüfbescheinigung:</strong> Die optische OTDR-Messung wurde fachgerecht mit kalibrierten Präzisionsmessgeräten nach DIN EN 50346 und {hideProvider ? 'den anerkannten Regeln der Technik' : <>den Vorgaben der <strong>{settings.providerName}</strong></>} durchgeführt. Alle Dämpfungswerte und Reflexionen unterschreiten die maximal zulässigen Grenzwerte. Die Glasfaserstrecke ist mängelfrei betriebsbereit.
                 </div>
 
                 <div style={styles.a4SignGrid}>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '5.8pt', fontWeight: 700 }}>Prüfer / Auftragnehmer:</div>
+                    <div style={{ fontSize: '5.8pt', fontWeight: 700 }}>{techTitle}</div>
                     <div style={styles.a4SignLine}>
                       {settings.signatureBase64 && <img src={settings.signatureBase64} alt="Unterschrift" style={{ maxHeight: '26px', maxWidth: '100%' }} />}
                     </div>
@@ -399,7 +422,7 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
                     </div>
                   </div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '5.8pt', fontWeight: 700 }}>Abnahme / {settings.providerName} / Bauleiter:</div>
+                    <div style={{ fontSize: '5.8pt', fontWeight: 700 }}>{clientTitle}</div>
                     <div style={styles.a4SignLine} />
                     <div style={styles.a4SignCaption}>
                       <span>Name in Druckbuchstaben</span>
