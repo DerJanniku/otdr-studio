@@ -36,6 +36,34 @@ export interface CustomerItem {
   };
 }
 
+export interface ExcelColumnMapping {
+  id: string;
+  customerName: string;
+  firstName: string;
+  lastName: string;
+  street: string;
+  zip: string;
+  city: string;
+  segment: string;
+  cableId: string;
+  fiberNumber: string;
+  orderId: string;
+}
+
+export const DEFAULT_COLUMN_MAPPING: ExcelColumnMapping = {
+  id: 'id, id-job, job-id, kunden-nr, kundennr, job, nr, nummer, no, client-id',
+  customerName: 'kunde, name, kundenname, client, teilnehmer, anschlussinhaber',
+  firstName: 'vorname, firstname, first name',
+  lastName: 'nachname, lastname, last name, familienname, surname',
+  street: 'straße, strasse, street, adresse, anschrift, address',
+  zip: 'plz, postleitzahl, zip, zip-code, postal, postalcode',
+  city: 'ort, stadt, wohnort, gemeinde, city, town',
+  segment: 'nvt, segment, strecke, trasse, abschnitt, cluster, route, section',
+  cableId: 'kabel, cable, kabel-id, kabelbezeichnung, cable-id',
+  fiberNumber: 'faser, faser-nr, fasernummer, fiber, strand, fiber-no',
+  orderId: 'auftrag, auftrags-nr, auftragsnummer, ticket, order, bestellung, vorgang, order-id',
+};
+
 export interface AppSettings {
   companyName: string;
   companyDept: string;
@@ -58,6 +86,7 @@ export interface AppSettings {
   hideContractor?: boolean;
   hideOrderId?: boolean;
   launchFiberOnly?: boolean;
+  columnMapping?: Partial<ExcelColumnMapping>;
 }
 
 export interface SettingsPreset {
@@ -261,43 +290,106 @@ export class CustomerStore {
     return [demoCustomer];
   }
 
+  private static normalizeHeader(str: string): string {
+    return (str || '')
+      .toLowerCase()
+      .trim()
+      .replace(/[\s\-_.:/\\()[\]{}]+/g, '');
+  }
+
   // Reads keyword rules in priority order (specific -> generic) so a header like
   // "Faser-Nr." lands on fiberNumber, not on id, and "Kunden-Nr." lands on id, not on name.
-  // Keyword lists are deliberately broad (German + English + common abbreviations) since
-  // the app has to recognize whatever column headers a given company's export happens to use.
-  private static detectColumns(headerCells: string[]): { colMap: Record<string, number>; score: number } {
+  // Supports custom user-configured aliases from AppSettings, case-insensitively and space/punctuation-tolerantly.
+  public static detectColumns(
+    headerCells: string[],
+    customMapping?: Partial<ExcelColumnMapping>
+  ): { colMap: Record<string, number>; score: number } {
     const colMap: Record<string, number> = {};
     let vornameCol = -1;
     let nachnameCol = -1;
 
-    headerCells.forEach((raw, idx) => {
-      const val = (raw || '').trim().toLowerCase();
-      if (!val) return;
-      const hasNumberWord = /\bnr\b|nr\.|nummer|\bid\b|\bnumber\b|\bno\.?\b/.test(val);
+    // Merge custom mapping with defaults
+    const mapping: ExcelColumnMapping = {
+      id: customMapping?.id || DEFAULT_COLUMN_MAPPING.id,
+      customerName: customMapping?.customerName || DEFAULT_COLUMN_MAPPING.customerName,
+      firstName: customMapping?.firstName || DEFAULT_COLUMN_MAPPING.firstName,
+      lastName: customMapping?.lastName || DEFAULT_COLUMN_MAPPING.lastName,
+      street: customMapping?.street || DEFAULT_COLUMN_MAPPING.street,
+      zip: customMapping?.zip || DEFAULT_COLUMN_MAPPING.zip,
+      city: customMapping?.city || DEFAULT_COLUMN_MAPPING.city,
+      segment: customMapping?.segment || DEFAULT_COLUMN_MAPPING.segment,
+      cableId: customMapping?.cableId || DEFAULT_COLUMN_MAPPING.cableId,
+      fiberNumber: customMapping?.fiberNumber || DEFAULT_COLUMN_MAPPING.fiberNumber,
+      orderId: customMapping?.orderId || DEFAULT_COLUMN_MAPPING.orderId,
+    };
 
-      if (val.includes('faser') || val.includes('fiber') || val.includes('strand')) {
+    // Helper to parse comma-separated aliases and normalize them
+    const parseAliases = (rawList: string) => {
+      return rawList
+        .split(',')
+        .map(a => a.trim().toLowerCase())
+        .filter(Boolean);
+    };
+
+    const aliases = {
+      fiberNumber: parseAliases(mapping.fiberNumber),
+      cableId: parseAliases(mapping.cableId),
+      orderId: parseAliases(mapping.orderId),
+      segment: parseAliases(mapping.segment),
+      zip: parseAliases(mapping.zip),
+      city: parseAliases(mapping.city),
+      street: parseAliases(mapping.street),
+      firstName: parseAliases(mapping.firstName),
+      lastName: parseAliases(mapping.lastName),
+      customerName: parseAliases(mapping.customerName),
+      id: parseAliases(mapping.id),
+    };
+
+    headerCells.forEach((raw, idx) => {
+      const rawTrimmed = (raw || '').trim();
+      if (!rawTrimmed) return;
+      const lower = rawTrimmed.toLowerCase();
+      const norm = CustomerStore.normalizeHeader(rawTrimmed);
+      if (!norm) return;
+
+      const hasNumberWord = /\bnr\b|nr\.|nummer|\bid\b|\bnumber\b|\bno\.?\b/.test(lower);
+
+      const matches = (aliasList: string[]) => {
+        return aliasList.some(alias => {
+          const aliasNorm = CustomerStore.normalizeHeader(alias);
+          if (!aliasNorm) return false;
+          // Exact match after normalization (e.g. "id-job" vs "ID-Job" or "id job")
+          if (norm === aliasNorm) return true;
+          // Substring match in normalized form (at least 3 characters to avoid false positives)
+          if (aliasNorm.length >= 3 && norm.includes(aliasNorm)) return true;
+          // Substring match in raw lower text
+          if (alias.length >= 3 && lower.includes(alias)) return true;
+          return false;
+        });
+      };
+
+      // Priority order: Specific columns first, generic ID/Name last
+      if (matches(aliases.fiberNumber)) {
         colMap['fiberNumber'] = idx;
-      } else if (val.includes('kabel') || val.includes('cable')) {
+      } else if (matches(aliases.cableId)) {
         colMap['cableId'] = idx;
-      } else if (val.includes('auftrag') || val.includes('ticket') || val.includes('order') || val.includes('bestellung') || val.includes('vorgang')) {
+      } else if (matches(aliases.orderId)) {
         colMap['orderId'] = idx;
-      } else if (val.includes('nvt') || val.includes('segment') || val.includes('strecke') || val.includes('trasse') || val.includes('abschnitt') || val.includes('route') || val.includes('section')) {
+      } else if (matches(aliases.segment)) {
         colMap['segment'] = idx;
-      } else if (val.includes('plz') || val.includes('postleitzahl') || val.includes('zip') || val.includes('postal')) {
-        // Separate postal-code column - combined with the city column (if any) when building the record.
+      } else if (matches(aliases.zip)) {
         colMap['zip'] = idx;
-      } else if (val.includes('ort') || val.includes('stadt') || val.includes('wohnort') || val.includes('city') || val.includes('gemeinde') || val.includes('town')) {
+      } else if (matches(aliases.city)) {
         colMap['city'] = idx;
-      } else if (val.includes('stra') || val.includes('street') || val.includes('adresse') || val.includes('address')) {
+      } else if (matches(aliases.street)) {
         colMap['street'] = idx;
-      } else if (val.includes('vorname') || val.includes('firstname') || val.includes('first name')) {
+      } else if (matches(aliases.firstName)) {
         vornameCol = idx;
-      } else if ((val.includes('nachname') || val.includes('lastname') || val.includes('last name') || val.includes('surname')) && !hasNumberWord) {
+      } else if (matches(aliases.lastName) && !hasNumberWord) {
         nachnameCol = idx;
-      } else if ((val.includes('name') || val.includes('kunde') || val.includes('customer') || val.includes('client') || val.includes('kontakt') || val.includes('contact')) && !hasNumberWord) {
-        // generic "Name"/"Kunde" column, but not "Kunden-Nr." (that's the job id)
+      } else if (matches(aliases.customerName) && !hasNumberWord) {
         colMap['name'] = idx;
-      } else if (hasNumberWord || val.includes('job')) {
+      } else if (matches(aliases.id) || hasNumberWord || norm.includes('job')) {
         colMap['id'] = idx;
       }
     });
@@ -310,6 +402,7 @@ export class CustomerStore {
     const score = Object.values(colMap).filter(v => v >= 0).length;
     return { colMap, score };
   }
+
 
   private static excelCellText(cell: ExcelJS.Cell): string {
     const v: any = cell.value;
@@ -388,7 +481,7 @@ export class CustomerStore {
           row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
             cells[colNumber] = CustomerStore.excelCellText(cell);
           });
-          const { colMap, score } = CustomerStore.detectColumns(cells);
+          const { colMap, score } = CustomerStore.detectColumns(cells, this.settings.columnMapping);
           if (colMap['id'] !== undefined && score > bestScore) {
             bestScore = score;
             bestColMap = colMap;
@@ -425,7 +518,7 @@ export class CustomerStore {
         const splitLine = (line: string) => line.split(delimiter).map(p => p.replace(/^["']|["']$/g, '').trim());
 
         const headerCells = lines.length > 0 ? splitLine(lines[0]) : [];
-        const { colMap, score } = CustomerStore.detectColumns(headerCells);
+        const { colMap, score } = CustomerStore.detectColumns(headerCells, this.settings.columnMapping);
 
         // Fall back to the legacy fixed column order if the header row isn't recognized,
         // so older exports without a header still import.
