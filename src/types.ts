@@ -31,6 +31,20 @@ export interface CustomerItem {
   };
 }
 
+export interface ExcelColumnMapping {
+  id: string;
+  customerName: string;
+  firstName: string;
+  lastName: string;
+  street: string;
+  zip: string;
+  city: string;
+  segment: string;
+  cableId: string;
+  fiberNumber: string;
+  orderId: string;
+}
+
 export interface AppSettings {
   companyName: string;
   companyDept: string;
@@ -53,4 +67,6 @@ export interface AppSettings {
   hideContractor?: boolean;
   hideOrderId?: boolean;
   launchFiberOnly?: boolean;
+  columnMapping?: Partial<ExcelColumnMapping>;
 }
+
