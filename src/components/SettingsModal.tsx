@@ -208,6 +208,46 @@ export function SettingsModal({ settings, onClose, onSave }: SettingsModalProps)
 
           <div style={{ marginTop: '1.25rem' }}>
             <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: '0.6rem' }}>
+              Protokoll-Optionen (Felder ausblenden &amp; Vorlauffaser)
+            </h4>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', cursor: 'pointer', color: 'var(--color-text-primary)' }}>
+                <input
+                  type="checkbox"
+                  checked={!!formData.hideProvider}
+                  onChange={(e) => setFormData({ ...formData, hideProvider: e.target.checked })}
+                />
+                Auftraggeber auf Protokoll ausblenden
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', cursor: 'pointer', color: 'var(--color-text-primary)' }}>
+                <input
+                  type="checkbox"
+                  checked={!!formData.hideContractor}
+                  onChange={(e) => setFormData({ ...formData, hideContractor: e.target.checked })}
+                />
+                Auftragnehmer auf Protokoll ausblenden
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', cursor: 'pointer', color: 'var(--color-text-primary)' }}>
+                <input
+                  type="checkbox"
+                  checked={!!formData.hideOrderId}
+                  onChange={(e) => setFormData({ ...formData, hideOrderId: e.target.checked })}
+                />
+                Auftrags-Nr. auf Protokoll ausblenden
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', cursor: 'pointer', color: 'var(--color-text-primary)' }}>
+                <input
+                  type="checkbox"
+                  checked={!!formData.launchFiberOnly}
+                  onChange={(e) => setFormData({ ...formData, launchFiberOnly: e.target.checked })}
+                />
+                Nur Vorlauffaser (keine Nachlauffaser)
+              </label>
+            </div>
+          </div>
+
+          <div style={{ marginTop: '1.25rem' }}>
+            <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: '0.6rem' }}>
               Darstellung
             </h4>
             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
