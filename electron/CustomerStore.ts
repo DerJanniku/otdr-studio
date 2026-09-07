@@ -294,8 +294,13 @@ export class CustomerStore {
     return (str || '')
       .toLowerCase()
       .trim()
+      .replace(/ß/g, 'ss')
+      .replace(/ä/g, 'ae')
+      .replace(/ö/g, 'oe')
+      .replace(/ü/g, 'ue')
       .replace(/[\s\-_.:/\\()[\]{}]+/g, '');
   }
+
 
   // Reads keyword rules in priority order (specific -> generic) so a header like
   // "Faser-Nr." lands on fiberNumber, not on id, and "Kunden-Nr." lands on id, not on name.
@@ -354,45 +359,74 @@ export class CustomerStore {
 
       const hasNumberWord = /\bnr\b|nr\.|nummer|\bid\b|\bnumber\b|\bno\.?\b/.test(lower);
 
-      const matches = (aliasList: string[]) => {
+      const exactMatch = (aliasList: string[]) => {
+        return aliasList.some(alias => {
+          const aliasNorm = CustomerStore.normalizeHeader(alias);
+          return aliasNorm && norm === aliasNorm;
+        });
+      };
+
+      const substringMatch = (aliasList: string[]) => {
         return aliasList.some(alias => {
           const aliasNorm = CustomerStore.normalizeHeader(alias);
           if (!aliasNorm) return false;
-          // Exact match after normalization (e.g. "id-job" vs "ID-Job" or "id job")
-          if (norm === aliasNorm) return true;
-          // Substring match in normalized form (at least 3 characters to avoid false positives)
           if (aliasNorm.length >= 3 && norm.includes(aliasNorm)) return true;
-          // Substring match in raw lower text
           if (alias.length >= 3 && lower.includes(alias)) return true;
           return false;
         });
       };
 
-      // Priority order: Specific columns first, generic ID/Name last
-      if (matches(aliases.fiberNumber)) {
+      // 1. Exact match check (highest accuracy)
+      if (exactMatch(aliases.id) || (exactMatch(aliases.id) === false && norm === 'job')) {
+        colMap['id'] = idx;
+      } else if (exactMatch(aliases.fiberNumber)) {
         colMap['fiberNumber'] = idx;
-      } else if (matches(aliases.cableId)) {
+      } else if (exactMatch(aliases.cableId)) {
         colMap['cableId'] = idx;
-      } else if (matches(aliases.orderId)) {
+      } else if (exactMatch(aliases.orderId)) {
         colMap['orderId'] = idx;
-      } else if (matches(aliases.segment)) {
-        colMap['segment'] = idx;
-      } else if (matches(aliases.zip)) {
-        colMap['zip'] = idx;
-      } else if (matches(aliases.city)) {
-        colMap['city'] = idx;
-      } else if (matches(aliases.street)) {
+      } else if (exactMatch(aliases.street)) {
         colMap['street'] = idx;
-      } else if (matches(aliases.firstName)) {
+      } else if (exactMatch(aliases.zip)) {
+        colMap['zip'] = idx;
+      } else if (exactMatch(aliases.city)) {
+        colMap['city'] = idx;
+      } else if (exactMatch(aliases.segment)) {
+        colMap['segment'] = idx;
+      } else if (exactMatch(aliases.firstName)) {
         vornameCol = idx;
-      } else if (matches(aliases.lastName) && !hasNumberWord) {
+      } else if (exactMatch(aliases.lastName) && !hasNumberWord) {
         nachnameCol = idx;
-      } else if (matches(aliases.customerName) && !hasNumberWord) {
+      } else if (exactMatch(aliases.customerName) && !hasNumberWord) {
         colMap['name'] = idx;
-      } else if (matches(aliases.id) || hasNumberWord || norm.includes('job')) {
+      }
+      // 2. Substring fallback check
+      else if (substringMatch(aliases.fiberNumber)) {
+        colMap['fiberNumber'] = idx;
+      } else if (substringMatch(aliases.cableId)) {
+        colMap['cableId'] = idx;
+      } else if (substringMatch(aliases.orderId)) {
+        colMap['orderId'] = idx;
+      } else if (substringMatch(aliases.street)) {
+        // Check street before segment because "trasse" is a substring of "strasse"
+        colMap['street'] = idx;
+      } else if (substringMatch(aliases.segment)) {
+        colMap['segment'] = idx;
+      } else if (substringMatch(aliases.zip)) {
+        colMap['zip'] = idx;
+      } else if (substringMatch(aliases.city)) {
+        colMap['city'] = idx;
+      } else if (substringMatch(aliases.firstName)) {
+        vornameCol = idx;
+      } else if (substringMatch(aliases.lastName) && !hasNumberWord) {
+        nachnameCol = idx;
+      } else if (substringMatch(aliases.customerName) && !hasNumberWord) {
+        colMap['name'] = idx;
+      } else if (substringMatch(aliases.id) || hasNumberWord || norm.includes('job')) {
         colMap['id'] = idx;
       }
     });
+
 
     if (vornameCol >= 0 || nachnameCol >= 0) {
       colMap['vorname'] = vornameCol;
