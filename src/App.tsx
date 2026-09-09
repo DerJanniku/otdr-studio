@@ -32,7 +32,8 @@ export function App() {
   const [showWizard, setShowWizard] = useState(false);
   const [loading, setLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
-  const [updateInfo, setUpdateInfo] = useState<{ latestVersion?: string; url?: string } | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<{ latestVersion?: string; url?: string; canSelfUpdate?: boolean } | null>(null);
+  const [updateState, setUpdateState] = useState<UpdateState | null>(null);
 
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
 
@@ -60,8 +61,15 @@ export function App() {
     });
 
     window.api?.checkForUpdates?.().then((res) => {
-      if (res?.hasUpdate) setUpdateInfo({ latestVersion: res.latestVersion, url: res.url });
+      if (res?.hasUpdate) {
+        setUpdateInfo({ latestVersion: res.latestVersion, url: res.url, canSelfUpdate: res.canSelfUpdate });
+        // On Windows the in-app updater takes over from here: asking it to check makes
+        // it emit the state the banner needs for the download progress.
+        if (res.canSelfUpdate) window.api?.updaterCheck?.();
+      }
     });
+
+    const unsubscribeUpdate = window.api?.onUpdateState?.((state) => setUpdateState(state));
 
     const unsubscribeUsb = window.api?.onUsbDetected?.((data) => {
       setCustomers(data.customers);
@@ -71,7 +79,10 @@ export function App() {
           : `USB-Stick "${data.volumeName}" erkannt, aber keine passenden Job-IDs gefunden.`
       );
     });
-    return () => unsubscribeUsb?.();
+    return () => {
+      unsubscribeUsb?.();
+      unsubscribeUpdate?.();
+    };
   }, []);
 
   useEffect(() => {
@@ -255,14 +266,40 @@ export function App() {
       {/* UPDATE BANNER */}
       {updateInfo && (
         <div style={styles.updateBanner}>
-          <span>Neue Version {updateInfo.latestVersion} von OTDR Studio ist verfügbar.</span>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button
-              style={styles.btnUpdateAction}
-              onClick={() => updateInfo.url && window.api?.openExternal?.(updateInfo.url)}
-            >
-              Herunterladen
-            </button>
+          <span>
+            {updateState?.phase === 'downloading'
+              ? `Version ${updateState.version || updateInfo.latestVersion} wird geladen … ${updateState.percent ?? 0} %`
+              : updateState?.phase === 'downloaded'
+              ? `Version ${updateState.version || updateInfo.latestVersion} ist bereit zur Installation.`
+              : updateState?.phase === 'error'
+              ? `Update fehlgeschlagen: ${updateState.message || 'unbekannter Fehler'}`
+              : `Neue Version ${updateInfo.latestVersion} von OTDR Studio ist verfügbar.`}
+          </span>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            {updateState?.phase === 'downloading' && (
+              <div style={styles.updateProgressTrack} aria-label="Download-Fortschritt">
+                <div style={{ ...styles.updateProgressBar, width: `${updateState.percent ?? 0}%` }} />
+              </div>
+            )}
+
+            {/* Installing in place only works on Windows; elsewhere the release page is the way out. */}
+            {updateInfo.canSelfUpdate && updateState?.phase === 'downloaded' ? (
+              <button style={styles.btnUpdateAction} onClick={() => window.api?.updaterInstall?.()}>
+                Neu starten &amp; installieren
+              </button>
+            ) : updateInfo.canSelfUpdate && updateState?.phase !== 'downloading' ? (
+              <button style={styles.btnUpdateAction} onClick={() => window.api?.updaterDownload?.()}>
+                Jetzt aktualisieren
+              </button>
+            ) : !updateInfo.canSelfUpdate ? (
+              <button
+                style={styles.btnUpdateAction}
+                onClick={() => updateInfo.url && window.api?.openExternal?.(updateInfo.url)}
+              >
+                Herunterladen
+              </button>
+            ) : null}
+
             <button style={styles.btnUpdateDismiss} onClick={() => setUpdateInfo(null)} aria-label="Schließen">✕</button>
           </div>
         </div>
@@ -529,6 +566,19 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: '0.75rem',
+  },
+  updateProgressTrack: {
+    width: '120px',
+    height: '5px',
+    backgroundColor: 'var(--color-bg-surface)',
+    border: '1px solid var(--color-border)',
+    borderRadius: '3px',
+    overflow: 'hidden',
+  },
+  updateProgressBar: {
+    height: '100%',
+    backgroundColor: 'var(--color-primary)',
+    transition: 'width 0.2s linear',
   },
   btnUpdateAction: {
     backgroundColor: 'var(--color-primary)',

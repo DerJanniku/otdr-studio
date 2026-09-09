@@ -5,6 +5,7 @@ import { CustomerStore, type AppSettings, type CustomerItem } from './CustomerSt
 import { SorMatcher } from './SorMatcher';
 import { PdfExporter } from './PdfExporter';
 import { UsbWatcher } from './UsbWatcher';
+import { Updater } from './Updater';
 
 app.setName('OTDR Studio');
 
@@ -78,6 +79,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   createWindow();
+  Updater.init(() => mainWindow);
   usbWatcher.start();
 
   // IPC Handlers
@@ -260,18 +262,34 @@ app.whenReady().then(() => {
     return customerStore.isFirstRun;
   });
 
+  // Version check against the GitHub release feed. This stays in place because it also
+  // works on macOS and in development, where the in-app updater is unavailable; there
+  // the renderer falls back to opening the release page.
   ipcMain.handle('check-for-updates', async () => {
     try {
       const res = await fetch('https://api.github.com/repos/DerJanniku/otdr-studio/releases/latest');
-      if (!res.ok) return { hasUpdate: false };
+      if (!res.ok) return { hasUpdate: false, canSelfUpdate: Updater.canSelfUpdate };
       const data: any = await res.json();
       const latestVersion = String(data.tag_name || '').replace(/^v/, '');
       const currentVersion = app.getVersion();
       const hasUpdate = latestVersion !== '' && compareVersions(latestVersion, currentVersion) > 0;
-      return { hasUpdate, latestVersion, url: data.html_url };
+      return { hasUpdate, latestVersion, url: data.html_url, canSelfUpdate: Updater.canSelfUpdate };
     } catch {
-      return { hasUpdate: false };
+      return { hasUpdate: false, canSelfUpdate: Updater.canSelfUpdate };
     }
+  });
+
+  ipcMain.handle('updater-get-state', async () => Updater.getState());
+
+  ipcMain.handle('updater-check', async () => Updater.check());
+
+  ipcMain.handle('updater-download', async () => {
+    await Updater.download();
+    return Updater.getState();
+  });
+
+  ipcMain.handle('updater-install', async () => {
+    Updater.install();
   });
 
   app.on('activate', () => {

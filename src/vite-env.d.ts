@@ -1,5 +1,15 @@
 /// <reference types="vite/client" />
 
+interface UpdateState {
+  phase: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'error';
+  version?: string;
+  percent?: number;
+  bytesPerSecond?: number;
+  message?: string;
+  canSelfUpdate: boolean;
+}
+
+
 interface Window {
   api?: {
     getCustomers: () => Promise<any[]>;
@@ -19,7 +29,12 @@ interface Window {
     openExternal: (url: string) => Promise<boolean>;
     getAppVersion: () => Promise<string>;
     isFirstRun: () => Promise<boolean>;
-    checkForUpdates: () => Promise<{ hasUpdate: boolean; latestVersion?: string; url?: string }>;
+    checkForUpdates: () => Promise<{ hasUpdate: boolean; latestVersion?: string; url?: string; canSelfUpdate?: boolean }>;
+    updaterGetState: () => Promise<UpdateState>;
+    updaterCheck: () => Promise<UpdateState>;
+    updaterDownload: () => Promise<UpdateState>;
+    updaterInstall: () => Promise<void>;
+    onUpdateState: (callback: (state: UpdateState) => void) => () => void;
     onUsbDetected: (callback: (data: { volumeName: string; matchedCount: number; matchedIds: number[]; customers: any[] }) => void) => () => void;
   };
 }
