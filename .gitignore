@@ -7,3 +7,9 @@ delivery
 .DS_Store
 *.log
 .tmp
+
+# Lokale Protokoll-Generatoren und Messdaten: enthalten echte Kunden-,
+# Standort- und Auftragsdaten und duerfen nicht in das oeffentliche Repo.
+scripts/generate_*_pdfs.cjs
+*.sor
+*.pdf
