@@ -114,6 +114,68 @@ export class PdfExporter {
       return true;
     });
 
+    // Ein Abnahmeprotokoll ist ein Nachweisdokument. Enthaelt die Messung keine belastbare
+    // Auswertung, wird kein Protokoll erzeugt - fruehere Fassungen haben in diesem Fall
+    // Platzhalterwerte gedruckt und trotzdem "BESTANDEN" gestempelt.
+    const dq = sorData.dataQuality;
+    if (dq && !dq.usable) {
+      win.destroy();
+      throw new Error(
+        'Aus dieser Messung kann kein Abnahmeprotokoll erstellt werden:\n- ' +
+        dq.warnings.join('\n- ') +
+        '\nBitte die Faser neu messen (Strecke dunkel schalten) und die SOR-Datei erneut einlesen.'
+      );
+    }
+
+    // Nur die tatsaechlich gemessene Wellenlaenge wird ausgewiesen. Zuvor wurden 1550-nm-Werte
+    // per Faktor (x0.75 / x0.65) aus dem 1310-nm-Wert hochgerechnet, also frei erfunden.
+    const wlNum = parseFloat(String(sorData.wavelength ?? '').replace(/[^0-9.]/g, '')) || 0;
+    const wlLabel = wlNum > 0 ? `@${wlNum.toFixed(0)} nm` : '';
+    // Wellenlaengenabhaengiger Daempfungsgrenzwert fuer G.652/G.657
+    const limitPerKm = wlNum >= 1500 ? 0.230 : (wlNum >= 1600 ? 0.250 : 0.380);
+
+    const num = (v: unknown): number | null => (typeof v === 'number' && isFinite(v) ? v : null);
+    const fmtVal = (v: unknown, dec: number, unit: string): string => {
+      const n = num(v);
+      return n === null ? '<span style="color:#b45309;">nicht ausgewertet</span>' : `${n.toFixed(dec)} ${unit}`;
+    };
+
+    const lenM = num(sorData.lengthMeters);
+    const lastEv = Array.isArray(sorData.events) && sorData.events.length > 0
+      ? sorData.events[sorData.events.length - 1] : null;
+    const endDistM = lastEv && num(lastEv.distance) !== null ? (lastEv.distance as number) * 1000 : lenM;
+    const perKm = num(sorData.avgLossDbPerKm);
+    const orl = num(sorData.orlDb);
+    const eventsAllPass = Array.isArray(sorData.events) && sorData.events.length > 0
+      && sorData.events.every((e: any) => e.status !== 'FAIL');
+    const isEndEvent = (e: any) => String(e?.type ?? '').includes('Faserende');
+    const evLossLimit = (e: any): number | null => {
+      if (isEndEvent(e)) return null;                        // Streckenende: kein Daempfungsgrenzwert
+      return String(e?.type ?? '').includes('Steck')
+        ? (settings.maxLossConnector ?? 0.5)
+        : (settings.maxLossSplice ?? 0.15);
+    };
+    // Der dB/km-Grenzwert gilt fuer die reine Faserdaempfung. Unsere Kennzahl ist
+    // Streckendaempfung/Laenge und enthaelt die Ereignisse - sie direkt gegen 0,230 zu pruefen
+    // wuerde kurze Strecken mit einem zulaessigen Spleiss faelschlich durchfallen lassen.
+    // Geprueft wird daher gegen ein Streckenbudget: Faseranteil + zulaessige Ereignisverluste.
+    // Die Einzelereignisse werden zusaetzlich scharf in der Ereignistabelle geprueft.
+    const spliceLimit = settings.maxLossSplice ?? 0.15;
+    const connLimit = settings.maxLossConnector ?? 0.5;
+    const eventBudget = (Array.isArray(sorData.events) ? sorData.events : []).reduce((acc: number, e: any) => {
+      const t = String(e.type ?? '');
+      if (t.includes('Faserende')) return acc;               // Streckenende ist kein Daempfungsereignis
+      return acc + (t.includes('Steck') ? connLimit : spliceLimit);
+    }, 0);
+    const lossBudget = lenM !== null ? (lenM / 1000) * limitPerKm + eventBudget : null;
+    const totalLoss = num(sorData.totalLossDb);
+    const lossOk = totalLoss !== null && lossBudget !== null && totalLoss <= lossBudget;
+    const perKmOk = perKm !== null && perKm <= limitPerKm;   // nur zur Einfaerbung der Kennzahl
+    const orlOk = orl !== null && orl >= (settings.minOrl ?? 45);
+    const passed = eventsAllPass && lossOk && orlOk;
+    const stampStatus = passed ? 'BESTANDEN' : 'NICHT BESTANDEN';
+    const stampColor = passed ? '#15803d' : '#b91c1c';
+
     // Plot area of the trace chart: x in [46, 718], y in [24, 96] (viewBox 0 0 740 140)
     let svgPolyline = '';
     if (sorData.tracePoints && sorData.tracePoints.length > 5) {
@@ -210,11 +272,12 @@ export class PdfExporter {
   }
   .data-table { width: 100%; border-collapse: collapse; }
   .data-table td { padding: 1px 0; font-size: 6.8pt; }
-  .data-table td.label { color: #64748b; width: 37%; font-weight: 500; }
-  .data-table td.val { color: #0f172a; font-weight: 600; }
+  .data-table { table-layout: fixed; }
+  .data-table td.label { color: #64748b; width: 24%; font-weight: 500; }
+  .data-table td.val { color: #0f172a; font-weight: 600; width: 26%; padding-right: 5px; }
   .stamp-box {
-    border: 1px solid #15803d;
-    background: #f0fdf4;
+    border: 1px solid ${stampColor};
+    background: ${passed ? '#f0fdf4' : '#fef2f2'};
     border-radius: 2px;
     padding: 3px;
     display: table-cell;
@@ -222,7 +285,7 @@ export class PdfExporter {
     width: 32%;
   }
   .stamp-inner {
-    border: 1px solid #86c9a0;
+    border: 1px solid ${passed ? '#86c9a0' : '#e5a5a5'};
     border-radius: 1px;
     padding: 4px 6px;
     text-align: center;
@@ -283,6 +346,15 @@ export class PdfExporter {
     padding: 0.5px 3px;
     background: #dcfce7;
     color: #15803d;
+    font-weight: 800;
+    border-radius: 2px;
+    font-size: 5.8pt;
+  }
+  .badge-fail {
+    display: inline-block;
+    padding: 0.5px 3px;
+    background: #fee2e2;
+    color: #b91c1c;
     font-weight: 800;
     border-radius: 2px;
     font-size: 5.8pt;
@@ -390,21 +462,21 @@ export class PdfExporter {
         <table class="data-table">
           <tr>
             <td class="label">Nettolänge (Strecke):</td>
-            <td class="val" style="font-size:7.5pt; font-weight:800; color:${accent};">${(sorData.lengthMeters).toFixed(1)} m (${(sorData.lengthMeters/1000).toFixed(3)} km)</td>
-            <td class="label">Opt. Rückflussdämpfung:</td>
-            <td class="val" style="color:#15803d;">${sorData.orlDb ? sorData.orlDb.toFixed(1) + ' dB' : '54.2 dB'} (Soll ≥ ${settings.minOrl.toFixed(1)} dB)</td>
+            <td class="val" style="font-size:7.5pt; font-weight:800; color:${accent};">${lenM !== null ? lenM.toFixed(1) + ' m (' + (lenM/1000).toFixed(3) + ' km)' : '<span style="color:#b45309;">nicht ausgewertet</span>'}</td>
+            <td class="label">Wellenlänge:</td>
+            <td class="val">${esc(sorData.wavelength ?? '')} · ${esc(sorData.pulseWidth ?? '')}</td>
           </tr>
           <tr>
-            <td class="label">Gesamtdämpfung @1310:</td>
-            <td class="val"><strong>${(sorData.totalLossDb).toFixed(3)} dB</strong> (Zulässig: ≤ 4.200 dB)</td>
-            <td class="label">Mittl. Dämpfung @1310:</td>
-            <td class="val">${(sorData.avgLossDbPerKm).toFixed(3)} dB/km (DIN ≤ 0.380)</td>
+            <td class="label">Streckendämpfung:</td>
+            <td class="val" style="color:${lossOk ? '#15803d' : '#b91c1c'};"><strong>${fmtVal(sorData.totalLossDb, 3, 'dB')}</strong>${lossBudget !== null ? ' (Budget ≤ ' + lossBudget.toFixed(3) + ' dB)' : ''}</td>
+            <td class="label">Davon pro km:</td>
+            <td class="val" style="color:${perKmOk ? '#15803d' : '#b45309'};">${fmtVal(perKm, 3, 'dB/km')} (Faser-Richtwert ≤ ${limitPerKm.toFixed(3)})</td>
           </tr>
           <tr>
-            <td class="label">Gesamtdämpfung @1550:</td>
-            <td class="val"><strong>${(sorData.totalLossDb * 0.75).toFixed(3)} dB</strong> (Zulässig: ≤ 3.100 dB)</td>
-            <td class="label">Mittl. Dämpfung @1550:</td>
-            <td class="val">${(sorData.avgLossDbPerKm * 0.65).toFixed(3)} dB/km (DIN ≤ 0.230)</td>
+            <td class="label">Rückflussdämpfung:</td>
+            <td class="val" style="color:${orlOk ? '#15803d' : '#b91c1c'};">${fmtVal(orl, 1, 'dB')} (Soll ≥ ${(settings.minOrl ?? 45).toFixed(1)} dB)</td>
+            <td class="label">Ereignisse:</td>
+            <td class="val">${Array.isArray(sorData.events) ? sorData.events.length : 0} · ${eventsAllPass ? 'alle im Grenzwert' : '<strong style="color:#b91c1c;">Grenzwert überschritten</strong>'}</td>
           </tr>
         </table>
       </div>
@@ -413,10 +485,12 @@ export class PdfExporter {
       <div class="stamp-inner">
         <div class="stamp-title">${stampTitle}</div>
         <svg width="16" height="16" viewBox="0 0 16 16" style="margin: 2px 0;">
-          <circle cx="8" cy="8" r="7" fill="none" stroke="#15803d" stroke-width="1"/>
-          <path d="M4.5 8.2 L7 10.7 L11.5 5.5" fill="none" stroke="#15803d" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="8" cy="8" r="7" fill="none" stroke="${stampColor}" stroke-width="1"/>
+          ${passed
+            ? `<path d="M4.5 8.2 L7 10.7 L11.5 5.5" fill="none" stroke="${stampColor}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>`
+            : `<path d="M5.2 5.2 L10.8 10.8 M10.8 5.2 L5.2 10.8" fill="none" stroke="${stampColor}" stroke-width="1.4" stroke-linecap="round"/>`}
         </svg>
-        <div class="stamp-status">BESTANDEN</div>
+        <div class="stamp-status" style="color:${stampColor};">${stampStatus}</div>
       </div>
     </div>
   </div>
@@ -424,7 +498,7 @@ export class PdfExporter {
   <!-- GRAPH SECTION -->
   <div class="graph-box">
     <div class="graph-header">
-      <span>4. OTDR Signalkurve · 1310 nm</span>
+      <span>4. OTDR Signalkurve${wlLabel ? ' · ' + esc(String(wlNum.toFixed(0))) + ' nm' : ''}</span>
       <span>Auflösung: ${sorData.resolution ? sorData.resolution.toFixed(2) : '0.32'} m · Messdatei: ${sorFileNameEsc}</span>
     </div>
     <svg viewBox="0 0 740 140" style="width:100%; height:126px; display:block; background:#ffffff;">
@@ -449,8 +523,8 @@ export class PdfExporter {
       <text x="42" y="81" fill="#64748b" font-size="6.5" text-anchor="end">10 dB</text>
       <text x="42" y="99" fill="#64748b" font-size="6.5" text-anchor="end">0 dB</text>
 
-      <text x="46" y="107" fill="#334155" font-size="6.8" font-weight="600">0 m (NVt)</text>
-      <text x="718" y="107" fill="#334155" font-size="6.8" font-weight="600" text-anchor="end">${(sorData.lengthMeters).toFixed(0)} m (HÜP ${effectiveName.split(' ').pop()})</text>
+      <text x="46" y="107" fill="#334155" font-size="6.8" font-weight="600">0 m (Einkopplung)</text>
+      <text x="718" y="107" fill="#334155" font-size="6.8" font-weight="600" text-anchor="end">${endDistM !== null ? endDistM.toFixed(0) + ' m (Faserende HÜP)' : 'Faserende HÜP'}</text>
       <text x="8" y="60" fill="#64748b" font-size="6.3" transform="rotate(-90 8 60)" text-anchor="middle">Pegel</text>
       <text x="382" y="119" fill="#64748b" font-size="6.3" text-anchor="middle">Distanz entlang der Trasse</text>
 
@@ -506,12 +580,12 @@ export class PdfExporter {
             <td style="font-weight: 700;">#${ev.nr}</td>
             <td style="font-weight: 600; font-family: monospace;">${(typeof ev.distance === 'number' ? (ev.distance > 10 ? ev.distance : ev.distance * 1000) : 0).toFixed(1)} m</td>
             <td><strong>${esc(ev.type || 'Ereignis')}</strong></td>
-            <td style="font-weight: 700; color: ${ev.loss > settings.maxLossConnector ? '#dc2626' : '#0f172a'};">${typeof ev.loss === 'number' ? ev.loss.toFixed(2) + ' dB' : '0.00 dB'}</td>
-            <td style="color: #64748b;">${ev.type?.includes('Steck') ? `≤ ${settings.maxLossConnector.toFixed(2)} dB` : `≤ ${settings.maxLossSplice.toFixed(2)} dB`}</td>
+            <td style="font-weight: 700; color: ${evLossLimit(ev) !== null && typeof ev.loss === 'number' && ev.loss > (evLossLimit(ev) as number) ? '#dc2626' : '#0f172a'};">${isEndEvent(ev) ? '–' : (typeof ev.loss === 'number' ? ev.loss.toFixed(2) + ' dB' : '–')}</td>
+            <td style="color: #64748b;">${evLossLimit(ev) !== null ? `≤ ${(evLossLimit(ev) as number).toFixed(2)} dB` : '–'}</td>
             <td style="font-family: monospace;">${ev.reflectance !== null && ev.reflectance !== undefined && ev.reflectance !== 0 ? (typeof ev.reflectance === 'number' ? ev.reflectance.toFixed(1) : ev.reflectance) + ' dB' : '–'}</td>
-            <td style="color: #64748b;">${ev.type?.includes('Steck') ? '≤ -40.0 dB' : '–'}</td>
+            <td style="color: #64748b;">${ev.reflectance !== null && ev.reflectance !== undefined && ev.reflectance !== 0 ? '≤ -40.0 dB' : '–'}</td>
             <td style="text-align: center;">
-              ${ev.status === 'PASS' ? '<span class="badge-pass">PASS</span>' : '<span class="badge-info">INFO</span>'}
+              ${ev.status === 'FAIL' ? '<span class="badge-fail">FAIL</span>' : '<span class="badge-pass">PASS</span>'}
             </td>
           </tr>
         `).join('')}
@@ -520,7 +594,9 @@ export class PdfExporter {
   </div>
 
   <div style="font-size: 5.8pt; color: #64748b; margin-top: 2px; line-height: 1.2;">
-    <strong>Prüfbescheinigung:</strong> Die optische OTDR-Messung wurde fachgerecht mit kalibrierten Präzisionsmessgeräten nach DIN EN 50346 und ${pruefText} durchgeführt. Alle Dämpfungswerte und Reflexionen unterschreiten die maximal zulässigen Grenzwerte. Die Glasfaserstrecke ist mängelfrei betriebsbereit.
+    <strong>Prüfbescheinigung:</strong> Die optische OTDR-Messung wurde fachgerecht mit kalibrierten Präzisionsmessgeräten nach DIN EN 50346 und ${pruefText} durchgeführt. ${passed
+      ? 'Alle Dämpfungswerte und Reflexionen unterschreiten die maximal zulässigen Grenzwerte. Die Glasfaserstrecke ist mängelfrei betriebsbereit.'
+      : '<strong style="color:#b91c1c;">Mindestens ein Messwert überschreitet die zulässigen Grenzwerte. Die Strecke ist nicht abnahmefähig und muss nachgearbeitet werden.</strong>'}
   </div>
 
   <div class="sign-grid">

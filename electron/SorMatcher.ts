@@ -148,7 +148,7 @@ export class SorMatcher {
         slope,
         sectionKm: i === 1 ? distance : distance - prevDist,
         type,
-        status: isPass ? 'PASS' : 'PASS'
+        status: isPass ? 'PASS' : 'FAIL'
       });
       prevDist = distance;
     }
@@ -162,25 +162,53 @@ export class SorMatcher {
 
     const launchOffset = events[0]?.distance || 0;
     const lengthMeters = Math.max(0, (summary['loss end'] || events[events.length - 1]?.distance || 0) - launchOffset) * 1000;
-    const totalLossDb = summary['total loss'] || (events.reduce((acc, e) => acc + Math.max(0, e.loss), 0));
+    const totalLossDb = summary['total loss'] || 0;
+
+    // Ein Abnahmeprotokoll darf ausschliesslich gemessene Werte zeigen. Fruehere Fassungen haben
+    // fehlende Felder mit Platzhaltern (1428.5 m, 0.684 dB, 54.2 dB, erfundene Muffen) aufgefuellt -
+    // das erzeugt ein "BESTANDEN"-Protokoll aus einer Messung ohne jede Auswertung. Stattdessen
+    // wird die Datenlage jetzt bewertet und fehlende Werte bleiben null.
+    const rawTrace = trace.map((t: any) => t?.power).filter((v: any) => typeof v === 'number');
+    const zeroCount = rawTrace.filter((v: number) => v === 0).length;
+    const zeroRatio = rawTrace.length > 0 ? zeroCount / rawTrace.length : 1;
+    let rises = 0;
+    let falls = 0;
+    for (let i = 1; i < rawTrace.length; i++) {
+      if (rawTrace[i] > rawTrace[i - 1]) rises++;
+      else if (rawTrace[i] < rawTrace[i - 1]) falls++;
+    }
+    // Eine echte OTDR-Kurve verlaeuft nahezu monoton. Liegt das Verhaeltnis nahe 50:50, ist der
+    // Trace Rauschen (z. B. Messung gegen ein aktives Signal) und als Nachweis unbrauchbar.
+    const monotonicity = (rises + falls) > 0 ? Math.abs(rises - falls) / (rises + falls) : 0;
+
+    const warnings: string[] = [];
+    const hasSummary = (summary['total loss'] || 0) > 0 && (summary['loss end'] || 0) > 0;
+    if (!hasSummary) warnings.push('Die SOR-Datei enthaelt keine Auswertung (Summary leer): keine Streckendaempfung, keine Laenge, kein ORL.');
+    if (events.length === 0) warnings.push('Keine Ereignisse in der SOR-Datei gefunden.');
+    if (zeroRatio > 0.05) warnings.push(`Messkurve unbrauchbar: ${(zeroRatio * 100).toFixed(1)} % der Messpunkte sind 0.`);
+    if (monotonicity < 0.5 && rawTrace.length > 50) warnings.push('Messkurve verlaeuft nicht monoton (Rauschen statt Rueckstreukurve).');
 
     return {
-      wavelength: fxd.wavelength || '1310 nm',
-      pulseWidth: fxd['pulse width'] || '30 ns',
-      refractiveIndex: fxd.index || '1.4670',
-      backscatter: fxd.BC || '-79.4 dB',
-      resolution: fxd.resolution || 0.16,
-      lengthMeters: lengthMeters > 0 ? lengthMeters : 1428.5,
-      totalLossDb: totalLossDb > 0 ? totalLossDb : 0.684,
-      avgLossDbPerKm: lengthMeters > 0 ? (totalLossDb / (lengthMeters / 1000)) : 0.338,
-      orlDb: summary.ORL || 54.2,
-      events: events.length > 0 ? events : [
-        { nr: 1, distance: 0.0, loss: 0.28, reflectance: -58.4, type: 'Steckverbinder (Vorlauf ➔ NVt)', status: 'PASS' },
-        { nr: 2, distance: 0.450, loss: 0.04, reflectance: null, type: 'Fusionsspleiß (Muffe M-04)', status: 'PASS' },
-        { nr: 3, distance: 0.980, loss: 0.06, reflectance: null, type: 'Fusionsspleiß (Muffe M-08)', status: 'PASS' },
-        { nr: 4, distance: 1.428, loss: 0.30, reflectance: -62.1, type: 'Steckverbinder (HÜP SC/APC)', status: 'PASS' }
-      ],
-      tracePoints: downsampledTrace
+      wavelength: fxd.wavelength || null,
+      pulseWidth: fxd['pulse width'] || null,
+      refractiveIndex: fxd.index || null,
+      backscatter: fxd.BC || null,
+      resolution: fxd.resolution || null,
+      lengthMeters: lengthMeters > 0 ? lengthMeters : null,
+      totalLossDb: totalLossDb > 0 ? totalLossDb : null,
+      // Gesamtdaempfung/Laenge ist die Streckendaempfung pro km (inkl. Ereignisse) - nicht die
+      // per LSA bestimmte reine Faserdaempfung. Entsprechend wird sie im Protokoll benannt.
+      avgLossDbPerKm: (lengthMeters > 0 && totalLossDb > 0) ? (totalLossDb / (lengthMeters / 1000)) : null,
+      orlDb: summary.ORL > 0 ? summary.ORL : null,
+      events,
+      tracePoints: downsampledTrace,
+      dataQuality: {
+        usable: warnings.length === 0,
+        hasSummary,
+        zeroRatio,
+        monotonicity,
+        warnings
+      }
     };
   }
 }
