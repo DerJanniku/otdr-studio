@@ -91,13 +91,31 @@ export class SorMatcher {
         if (candidateId) {
           const customer = customerList.find(c => c.id === candidateId);
           if (customer) {
+            const newSor = this.formatParsedSor(parsed);
+            const newWl = parseFloat(String(newSor.wavelength ?? '').replace(/[^0-9.]/g, '')) || 0;
+
+            if (customer.sorData && customer.sorData.wavelength) {
+              const existingWl = parseFloat(String(customer.sorData.wavelength ?? '').replace(/[^0-9.]/g, '')) || 0;
+              if (existingWl > 0 && newWl > 0 && Math.abs(existingWl - newWl) > 100) {
+                const sor1310 = existingWl < newWl ? customer.sorData : newSor;
+                const sor1550 = existingWl < newWl ? newSor : customer.sorData;
+                const loss1310 = sor1310.totalLossDb;
+                const loss1550 = sor1550.totalLossDb;
+                if (typeof loss1310 === 'number' && typeof loss1550 === 'number') {
+                  const delta = loss1550 - loss1310;
+                  if (delta > 0.5) {
+                    customer.macrobendWarning = `Verdacht auf Makrobiegung / Faserknick in Kassette: Dämpfung bei 1550 nm (${loss1550.toFixed(2)} dB) ist um ${delta.toFixed(2)} dB höher als bei 1310 nm (${loss1310.toFixed(2)} dB).`;
+                  }
+                }
+                customer.secondarySorData = existingWl < newWl ? newSor : customer.sorData;
+              }
+            }
+
             customer.status = 'matched';
             customer.sorFileName = fileName;
             customer.sorFilePath = filePath;
-            customer.sorData = this.formatParsedSor(parsed);
+            customer.sorData = newSor;
             customer.measuredAt = parsed.FxdParams?.['date/time'] || new Date().toISOString();
-            // Leave technicianName unset when the SOR file has no operator - the PDF export
-            // falls back to the Settings default technician, which the user can edit freely.
             if (parsed.GenParams?.operator) {
               customer.technicianName = parsed.GenParams.operator;
             }

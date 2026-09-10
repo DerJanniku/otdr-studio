@@ -176,6 +176,39 @@ app.whenReady().then(() => {
     return customerStore.deletePreset(id);
   });
 
+  ipcMain.handle('get-projects', async () => {
+    return customerStore.getProjects();
+  });
+
+  ipcMain.handle('create-project', async (_e, data) => {
+    return customerStore.createProject(data);
+  });
+
+  ipcMain.handle('update-project', async (_e, project) => {
+    return customerStore.updateProject(project);
+  });
+
+  ipcMain.handle('delete-project', async (_e, id: string) => {
+    return customerStore.deleteProject(id);
+  });
+
+  ipcMain.handle('get-active-project', async () => {
+    return customerStore.getActiveProject();
+  });
+
+  ipcMain.handle('set-active-project', async (_e, id: string) => {
+    return customerStore.setActiveProject(id);
+  });
+
+  ipcMain.handle('choose-directory', async () => {
+    const res = await dialog.showOpenDialog({
+      properties: ['openDirectory', 'createDirectory'],
+      title: 'SharePoint- / Projektordner auswählen',
+    });
+    if (res.canceled || !res.filePaths || res.filePaths.length === 0) return null;
+    return res.filePaths[0];
+  });
+
   ipcMain.handle('generate-pdf-protocol', async (_e, customer, customSettings, openAfter = true) => {
     if (!customer.sorData) {
       return { success: false, error: 'Für diesen Kunden liegt noch keine OTDR-Messung vor. Bitte zuerst eine passende .sor-Datei zuordnen (USB-Stick scannen).' };
@@ -184,11 +217,26 @@ app.whenReady().then(() => {
       const settings = customSettings || customerStore.getSettings();
       const nameSafe = (customer.customOverrides?.customerName || customer.customerName).replace(/[^a-zA-Z0-9_-]/g, '_');
       const fileName = `MTS2000_DIN_Protokoll_Job${String(customer.id).padStart(3, '0')}_${nameSafe}.pdf`;
-      const deliveryDir = path.join(app.getPath('documents'), 'OTDR_Protokolle');
+      
+      const activeProj = customerStore.getActiveProject();
+      let deliveryDir = path.join(app.getPath('documents'), 'OTDR_Protokolle');
+      if (activeProj?.sharepointPath && fs.existsSync(activeProj.sharepointPath)) {
+        deliveryDir = path.join(activeProj.sharepointPath, String(customer.id), 'Messungen');
+      }
       fs.mkdirSync(deliveryDir, { recursive: true });
       const targetPath = path.join(deliveryDir, fileName);
 
       await PdfExporter.generateSinglePdf(customer, settings, targetPath);
+
+      // Copy raw .sor file alongside if available
+      if (customer.sorFilePath && fs.existsSync(customer.sorFilePath)) {
+        try {
+          const rawDest = path.join(deliveryDir, path.basename(customer.sorFilePath));
+          if (!fs.existsSync(rawDest)) {
+            fs.copyFileSync(customer.sorFilePath, rawDest);
+          }
+        } catch {}
+      }
 
       if (openAfter) {
         await shell.openPath(targetPath);
@@ -207,9 +255,13 @@ app.whenReady().then(() => {
   ipcMain.handle('batch-export-pdfs', async (_e, customerIds: number[], customSettings) => {
     try {
       const settings = customSettings || customerStore.getSettings();
+      const activeProj = customerStore.getActiveProject();
+      const hasSharepoint = !!(activeProj?.sharepointPath && fs.existsSync(activeProj.sharepointPath));
       const timestamp = new Date().toISOString().slice(0, 10);
-      const deliveryDir = path.join(app.getPath('documents'), 'OTDR_Protokolle', `Export_${timestamp}`);
-      fs.mkdirSync(deliveryDir, { recursive: true });
+      const defaultDeliveryDir = path.join(app.getPath('documents'), 'OTDR_Protokolle', `Export_${timestamp}`);
+      if (!hasSharepoint) {
+        fs.mkdirSync(defaultDeliveryDir, { recursive: true });
+      }
 
       const allCustomers = customerStore.getCustomers();
       const targetCustomers = (customerIds && customerIds.length > 0
@@ -223,9 +275,23 @@ app.whenReady().then(() => {
         try {
           const nameSafe = (cust.customOverrides?.customerName || cust.customerName).replace(/[^a-zA-Z0-9_-]/g, '_');
           const fileName = `MTS2000_DIN_Protokoll_Job${String(cust.id).padStart(3, '0')}_${nameSafe}.pdf`;
-          const targetPath = path.join(deliveryDir, fileName);
+          const targetDir = hasSharepoint
+            ? path.join(activeProj!.sharepointPath!, String(cust.id), 'Messungen')
+            : defaultDeliveryDir;
+          fs.mkdirSync(targetDir, { recursive: true });
+          const targetPath = path.join(targetDir, fileName);
 
           await PdfExporter.generateSinglePdf(cust, settings, targetPath);
+
+          if (cust.sorFilePath && fs.existsSync(cust.sorFilePath)) {
+            try {
+              const rawDest = path.join(targetDir, path.basename(cust.sorFilePath));
+              if (!fs.existsSync(rawDest)) {
+                fs.copyFileSync(cust.sorFilePath, rawDest);
+              }
+            } catch {}
+          }
+
           cust.status = 'exported';
           customerStore.updateCustomer(cust);
           exportedCount++;
@@ -235,9 +301,10 @@ app.whenReady().then(() => {
         }
       }
 
-      if (exportedCount > 0) await shell.openPath(deliveryDir);
+      const openTarget = hasSharepoint ? activeProj!.sharepointPath! : defaultDeliveryDir;
+      if (exportedCount > 0) await shell.openPath(openTarget);
 
-      return { success: exportedCount > 0, count: exportedCount, folderPath: deliveryDir, error: failures.length > 0 ? failures.join('; ') : undefined };
+      return { success: exportedCount > 0, count: exportedCount, folderPath: openTarget, error: failures.length > 0 ? failures.join('; ') : undefined };
     } catch (err: any) {
       console.error('Batch export failed:', err);
       return { success: false, error: err.message };

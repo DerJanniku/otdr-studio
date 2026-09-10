@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { CustomerItem, AppSettings } from '../types';
+import { getFiberColorInfo } from '../utils/fiberColors';
 
 interface ProtocolPreviewModalProps {
   customer: CustomerItem;
@@ -25,6 +26,8 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
     cableId: customer.customOverrides?.cableId ?? customer.cableId ?? `K-${customer.id}`,
     fiberNumber: customer.customOverrides?.fiberNumber ?? customer.fiberNumber ?? 1,
   });
+
+  const fiberInfo = getFiberColorInfo(formData.fiberNumber);
 
   const hideProvider = settings.hideProvider || !settings.providerName;
   const hideContractor = settings.hideContractor || !settings.companyName;
@@ -65,8 +68,9 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
   const sor = customer.sorData;
 
   // Plot area of the trace chart: x in [46, 718], y in [24, 96] (viewBox 0 0 740 140)
+  const hasTrace = Array.isArray(sor?.tracePoints) && sor.tracePoints.length > 5;
   let svgPolyline = '';
-  if (sor?.tracePoints && sor.tracePoints.length > 5) {
+  if (hasTrace) {
     const pts = sor.tracePoints;
     const minP = Math.min(...pts);
     const maxP = Math.max(...pts);
@@ -76,8 +80,6 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
       const y = 96 - ((p - minP) / rangeP) * 72;
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     }).join(' ');
-  } else if (sor) {
-    svgPolyline = '46,34 100,37 100,27 104,39 240,52 240,55 400,66 400,69 560,80 560,30 564,84 630,88 630,28 634,90 718,92';
   }
 
   return (
@@ -101,7 +103,10 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
             <div style={styles.tabToggle}>
               <button 
                 style={{ ...styles.tabBtn, ...(activeTab === 'preview' ? styles.tabBtnActive : {}) }}
-                onClick={() => setActiveTab('preview')}
+                onClick={() => {
+                  if (activeTab === 'edit') handleSave();
+                  setActiveTab('preview');
+                }}
               >
                 DIN Vorschau
               </button>
@@ -114,7 +119,12 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
             </div>
             <button
               style={customer.sorData ? styles.btnPdf : { ...styles.btnPdf, opacity: 0.4, cursor: 'not-allowed' }}
-              onClick={() => customer.sorData && onGeneratePdf({ ...customer, customOverrides: formData })}
+              onClick={() => {
+                if (!customer.sorData) return;
+                const updated: CustomerItem = { ...customer, customOverrides: formData };
+                onSaveOverride(updated);
+                onGeneratePdf(updated);
+              }}
               disabled={!customer.sorData}
               title={customer.sorData ? undefined : 'Erst möglich, sobald eine OTDR-Messung (.sor) zugeordnet wurde'}
             >
@@ -243,6 +253,13 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
                   </div>
                 </div>
 
+                {/* Macrobend warning if present */}
+                {customer.macrobendWarning && (
+                  <div style={{ backgroundColor: '#fffbeb', border: '1.5px solid #f59e0b', borderRadius: '4px', padding: '3px 8px', marginBottom: '4px', fontSize: '6.5pt', color: '#92400e' }}>
+                    <strong>⚠️ Messwert-Auffälligkeit:</strong> {customer.macrobendWarning}
+                  </div>
+                )}
+
                 {/* 2. Top Two Columns */}
                 <div style={styles.a4Grid2}>
                   <div style={styles.a4Card}>
@@ -255,7 +272,7 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
                         <tr><td style={styles.a4Label}>Endkunde / Anschluss:</td><td style={{ ...styles.a4Val, fontWeight: 800 }}>{formData.customerName}</td></tr>
                         <tr><td style={styles.a4Label}>Adresse / Standort:</td><td style={styles.a4Val}>{formData.street}, {formData.city}</td></tr>
                         <tr><td style={styles.a4Label}>Mess-Abschnitt:</td><td style={styles.a4Val}>{formData.segment}</td></tr>
-                        <tr><td style={styles.a4Label}>Kabel-ID / Faser:</td><td style={styles.a4Val}>{formData.cableId} · <strong>Faser #{formData.fiberNumber}</strong> · {customer.colorCode || 'Rot (DIN 47100)'}</td></tr>
+                        <tr><td style={styles.a4Label}>Kabel-ID / Faser:</td><td style={styles.a4Val}>{formData.cableId} · <strong>Faser #{formData.fiberNumber}</strong> · {fiberInfo.label}</td></tr>
                       </tbody>
                     </table>
                   </div>
@@ -339,7 +356,13 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
                     <text x="46" y="107" fill="#334155" fontSize="6.8" fontWeight="600">0 m (NVt)</text>
                     <text x="718" y="107" fill="#334155" fontSize="6.8" fontWeight="600" textAnchor="end">{(sor.lengthMeters).toFixed(0)} m (HÜP)</text>
 
-                    <polyline fill="none" stroke="#1e293b" strokeWidth="1.1" points={svgPolyline} />
+                    {hasTrace ? (
+                      <polyline fill="none" stroke="#1e293b" strokeWidth="1.1" points={svgPolyline} />
+                    ) : (
+                      <text x="382" y="62" fill="#64748b" fontSize="8.5" textAnchor="middle">
+                        Keine Rohdaten-Rückstreukurve in SOR-Datei hinterlegt
+                      </text>
+                    )}
 
                     {[...(sor.events || [])]
                       .filter((ev: any) => !(isLaunchOnly && ev.type?.toLowerCase().includes('nachlauf')))

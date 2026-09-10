@@ -12,6 +12,13 @@ contextBridge.exposeInMainWorld('api', {
   getSettingPresets: () => ipcRenderer.invoke('get-setting-presets'),
   saveSettingPreset: (name: string, settings: any) => ipcRenderer.invoke('save-setting-preset', name, settings),
   deleteSettingPreset: (id: number) => ipcRenderer.invoke('delete-setting-preset', id),
+  getProjects: () => ipcRenderer.invoke('get-projects'),
+  createProject: (data: any) => ipcRenderer.invoke('create-project', data),
+  updateProject: (project: any) => ipcRenderer.invoke('update-project', project),
+  deleteProject: (id: string) => ipcRenderer.invoke('delete-project', id),
+  getActiveProject: () => ipcRenderer.invoke('get-active-project'),
+  setActiveProject: (id: string) => ipcRenderer.invoke('set-active-project', id),
+  chooseDirectory: () => ipcRenderer.invoke('choose-directory'),
   generatePdfProtocol: (customer: any, settings?: any, openAfter: boolean = true) => 
     ipcRenderer.invoke('generate-pdf-protocol', customer, settings, openAfter),
   batchExportPdfs: (customerIds?: number[], settings?: any) => 
