@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import type { CustomerItem, AppSettings } from './types';
+import type { CustomerItem, AppSettings, Project } from './types';
 import { CustomerTable } from './components/CustomerTable';
 import { ProtocolPreviewModal } from './components/ProtocolPreviewModal';
 import { SettingsModal } from './components/SettingsModal';
 import { SetupWizard } from './components/SetupWizard';
+import { ProjectDashboard } from './components/ProjectDashboard';
 
 const DEFAULT_SETTINGS: AppSettings = {
   companyName: 'Musterfirma GmbH',
@@ -24,6 +25,10 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 export function App() {
+  const [view, setView] = useState<'dashboard' | 'project'>('dashboard');
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [activeProject, setActiveProject] = useState<Project | null>(null);
+
   const [customers, setCustomers] = useState<CustomerItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'matched' | 'pending' | 'exported'>('all');
@@ -42,7 +47,19 @@ export function App() {
     setTimeout(() => setToastMessage(''), 4500);
   };
 
+  const loadProjects = async () => {
+    if (window.api?.getProjects) {
+      const projs = await window.api.getProjects();
+      setProjects(projs);
+    }
+    if (window.api?.getActiveProject) {
+      const active = await window.api.getActiveProject();
+      setActiveProject(active);
+    }
+  };
+
   const loadData = async () => {
+    await loadProjects();
     if (window.api?.getCustomers) {
       const list = await window.api.getCustomers();
       setCustomers(list);
@@ -63,8 +80,6 @@ export function App() {
     window.api?.checkForUpdates?.().then((res) => {
       if (res?.hasUpdate) {
         setUpdateInfo({ latestVersion: res.latestVersion, url: res.url, canSelfUpdate: res.canSelfUpdate });
-        // On Windows the in-app updater takes over from here: asking it to check makes
-        // it emit the state the banner needs for the download progress.
         if (res.canSelfUpdate) window.api?.updaterCheck?.();
       }
     });
@@ -73,6 +88,7 @@ export function App() {
 
     const unsubscribeUsb = window.api?.onUsbDetected?.((data) => {
       setCustomers(data.customers);
+      loadProjects();
       showToast(
         data.matchedCount > 0
           ? `USB-Stick "${data.volumeName}" erkannt: ${data.matchedCount} OTDR-Messung(en) automatisch zugeordnet.`
@@ -90,6 +106,43 @@ export function App() {
     document.documentElement.style.setProperty('--color-primary', settings.accentColor);
     document.documentElement.style.setProperty('--color-primary-hover', darkenHex(settings.accentColor, 0.15));
   }, [settings.themeMode, settings.accentColor]);
+
+  const handleSelectProject = async (projectId: string) => {
+    if (!window.api?.setActiveProject) return;
+    setLoading(true);
+    try {
+      const res = await window.api.setActiveProject(projectId);
+      if (res.success) {
+        setCustomers(res.customers);
+        setActiveProject(res.project);
+        setView('project');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateProject = async (data: Partial<Project>) => {
+    if (!window.api?.createProject) return;
+    const newProj = await window.api.createProject(data);
+    await loadProjects();
+    await handleSelectProject(newProj.id);
+  };
+
+  const handleUpdateProject = async (proj: Project) => {
+    if (!window.api?.updateProject) return;
+    await window.api.updateProject(proj);
+    await loadProjects();
+    if (activeProject?.id === proj.id) {
+      setActiveProject(proj);
+    }
+  };
+
+  const handleDeleteProject = async (id: string) => {
+    if (!window.api?.deleteProject) return;
+    await window.api.deleteProject(id);
+    await loadProjects();
+  };
 
   const handleWizardFinish = async (newSettings: AppSettings) => {
     if (window.api?.saveAppSettings) {
@@ -113,6 +166,7 @@ export function App() {
       const res = await window.api.importCustomerFile();
       if (res.success && res.customers) {
         setCustomers(res.customers);
+        await loadProjects();
         showToast(
           res.warning
             ? `${res.count} Kunden importiert. Hinweis: ${res.warning}`
@@ -135,6 +189,7 @@ export function App() {
       const res = await window.api.chooseUsbFolder();
       if (res.success && res.customers) {
         setCustomers(res.customers);
+        await loadProjects();
         if (res.matchedCount && res.matchedCount > 0) {
           showToast(`${res.matchedCount} OTDR-Messungen (.sor) automatisch den Job-IDs zugeordnet.`);
         } else {
@@ -162,7 +217,7 @@ export function App() {
     try {
       const res = await window.api.batchExportPdfs(readyCustomers.map(c => c.id), settings);
       if (res.success) {
-        showToast(`${res.count} DIN EN 50346 Protokolle erfolgreich exportiert. Ausgabeordner geöffnet.`);
+        showToast(`${res.count} DIN EN 50346 Protokolle erfolgreich exportiert. Zielordner geöffnet.`);
         await loadData();
       } else {
         alert(`Fehler beim Batch-Export: ${res.error}`);
@@ -251,6 +306,29 @@ export function App() {
       <header style={styles.navbar}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
           <div style={styles.brandLogo}>OTDR STUDIO</div>
+          {view === 'project' && (
+            <button
+              style={styles.btnBack}
+              onClick={() => {
+                loadProjects();
+                setView('dashboard');
+              }}
+            >
+              ← Alle Ausbaugebiete
+            </button>
+          )}
+          {view === 'project' && activeProject && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+              <span style={styles.activeProjectBadge}>
+                📍 {activeProject.name}
+              </span>
+              {activeProject.sharepointPath && (
+                <span style={styles.sharepointBadge} title={activeProject.sharepointPath}>
+                  📂 SharePoint Ingest
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
@@ -282,7 +360,6 @@ export function App() {
               </div>
             )}
 
-            {/* Installing in place only works on Windows; elsewhere the release page is the way out. */}
             {updateInfo.canSelfUpdate && updateState?.phase === 'downloaded' ? (
               <button style={styles.btnUpdateAction} onClick={() => window.api?.updaterInstall?.()}>
                 Neu starten &amp; installieren
@@ -305,92 +382,115 @@ export function App() {
         </div>
       )}
 
-      {/* STATS BANNER */}
-      <div style={styles.statsRow}>
-        <div style={styles.statCard}>
-          <span style={styles.statTitle}>Kundenliste (SharePoint)</span>
-          <span style={styles.statNum}>{totalCount}</span>
-        </div>
-        <div style={{ ...styles.statCard, borderColor: 'rgba(34, 197, 94, 0.3)', backgroundColor: 'rgba(34, 197, 94, 0.05)' }}>
-          <span style={{ ...styles.statTitle, color: '#22c55e' }}>OTDR gemessen (.sor)</span>
-          <span style={{ ...styles.statNum, color: '#22c55e' }}>{matchedCount}</span>
-        </div>
-        <div style={{ ...styles.statCard, borderColor: 'rgba(168, 85, 247, 0.3)', backgroundColor: 'rgba(168, 85, 247, 0.05)' }}>
-          <span style={{ ...styles.statTitle, color: '#a855f7' }}>PDFs exportiert</span>
-          <span style={{ ...styles.statNum, color: '#a855f7' }}>{exportedCount}</span>
-        </div>
-        <div style={styles.statCard}>
-          <span style={styles.statTitle}>Offene Messungen</span>
-          <span style={styles.statNum}>{pendingCount}</span>
-        </div>
-      </div>
-
-      {/* ACTION BAR */}
-      <div style={styles.actionBar}>
-        <div style={{ display: 'flex', gap: '0.65rem', flexWrap: 'wrap' }}>
-          <button style={styles.btnPrimary} onClick={handleImportExcel} disabled={loading}>
-            SharePoint Excel hochladen (.xlsx)
-          </button>
-          <button style={{ ...styles.btnPrimary, backgroundColor: '#1e293b', border: '1px solid rgba(255,255,255,0.15)' }} onClick={handleScanUsb} disabled={loading}>
-            USB-Stick / OTDR-Ordner scannen
-          </button>
-          <button 
-            style={{ ...styles.btnPrimary, backgroundColor: '#15803d' }} 
-            onClick={handleBatchExport} 
-            disabled={loading || matchedCount === 0}
-            title="Exportiert alle gemessenen Kunden als DIN-PDFs"
-          >
-            Alle gemessenen als PDF exportieren ({matchedCount})
-          </button>
-        </div>
-
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-          <div style={styles.filterTabs}>
-            <button 
-              style={{ ...styles.tabBtn, ...(filterStatus === 'all' ? styles.tabBtnActive : {}) }}
-              onClick={() => setFilterStatus('all')}
-            >
-              Alle ({totalCount})
-            </button>
-            <button 
-              style={{ ...styles.tabBtn, ...(filterStatus === 'matched' ? styles.tabBtnActive : {}) }}
-              onClick={() => setFilterStatus('matched')}
-            >
-              Gemessen ({matchedCount})
-            </button>
-            <button 
-              style={{ ...styles.tabBtn, ...(filterStatus === 'pending' ? styles.tabBtnActive : {}) }}
-              onClick={() => setFilterStatus('pending')}
-            >
-              Offen ({pendingCount})
-            </button>
-          </div>
-
-          <input 
-            type="text" 
-            placeholder="Filter nach ID, Name, Ort..." 
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={styles.searchInput}
-          />
-        </div>
-      </div>
-
-      {/* TOAST ALERT */}
+      {/* TOAST MESSAGE */}
       {toastMessage && (
         <div style={styles.toast}>
           {toastMessage}
         </div>
       )}
 
-      {/* TABLE CONTAINER */}
-      <main style={styles.mainContent}>
-        <CustomerTable 
-          customers={filteredCustomers}
-          onSelectCustomer={(c) => setSelectedCustomer(c)}
-          onGeneratePdf={(c) => handleGenerateSinglePdf(c)}
+      {/* MAIN VIEW CONTENT */}
+      {view === 'dashboard' ? (
+        <ProjectDashboard
+          projects={projects}
+          activeProjectId={activeProject?.id || ''}
+          onSelectProject={handleSelectProject}
+          onCreateProject={handleCreateProject}
+          onUpdateProject={handleUpdateProject}
+          onDeleteProject={handleDeleteProject}
+          onOpenSettings={() => setShowSettings(true)}
+          accentColor={settings.accentColor}
         />
-      </main>
+      ) : (
+        <>
+          {/* STATS BANNER */}
+          <div style={styles.statsRow}>
+            <div style={styles.statCard}>
+              <span style={styles.statTitle}>Kundenliste (SharePoint)</span>
+              <span style={styles.statNum}>{totalCount}</span>
+            </div>
+            <div style={{ ...styles.statCard, borderColor: 'rgba(34, 197, 94, 0.3)', backgroundColor: 'rgba(34, 197, 94, 0.05)' }}>
+              <span style={{ ...styles.statTitle, color: '#22c55e' }}>OTDR gemessen (.sor)</span>
+              <span style={{ ...styles.statNum, color: '#22c55e' }}>{matchedCount}</span>
+            </div>
+            <div style={{ ...styles.statCard, borderColor: 'rgba(168, 85, 247, 0.3)', backgroundColor: 'rgba(168, 85, 247, 0.05)' }}>
+              <span style={{ ...styles.statTitle, color: '#a855f7' }}>PDFs exportiert</span>
+              <span style={{ ...styles.statNum, color: '#a855f7' }}>{exportedCount}</span>
+            </div>
+            <div style={styles.statCard}>
+              <span style={styles.statTitle}>Offene Messungen</span>
+              <span style={styles.statNum}>{pendingCount}</span>
+            </div>
+          </div>
+
+          {/* ACTION BAR */}
+          <div style={styles.actionBar}>
+            <div style={{ display: 'flex', gap: '0.65rem', flexWrap: 'wrap' }}>
+              <button
+                style={{ ...styles.btnPrimary, backgroundColor: 'var(--color-primary)' }}
+                onClick={handleImportExcel}
+                disabled={loading}
+              >
+                📥 Kundenliste importieren (.xlsx / .csv)
+              </button>
+              <button
+                style={{ ...styles.btnPrimary, backgroundColor: '#059669' }}
+                onClick={handleScanUsb}
+                disabled={loading}
+              >
+                🔌 USB / Messordner einlesen (.sor)
+              </button>
+              <button
+                style={{ ...styles.btnPrimary, backgroundColor: '#7c3aed' }}
+                onClick={handleBatchExport}
+                disabled={loading || matchedCount === 0}
+              >
+                📑 Stapel-Export ({matchedCount} PDFs)
+              </button>
+            </div>
+
+            {/* SEARCH & FILTER */}
+            <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+              <input
+                type="text"
+                placeholder="Suche nach Name, Adresse, ID..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={styles.searchInput}
+              />
+              <div style={styles.tabContainer}>
+                <button
+                  style={{ ...styles.tabBtn, ...(filterStatus === 'all' ? styles.tabBtnActive : {}) }}
+                  onClick={() => setFilterStatus('all')}
+                >
+                  Alle ({totalCount})
+                </button>
+                <button
+                  style={{ ...styles.tabBtn, ...(filterStatus === 'matched' ? styles.tabBtnActive : {}) }}
+                  onClick={() => setFilterStatus('matched')}
+                >
+                  Bereit ({matchedCount})
+                </button>
+                <button
+                  style={{ ...styles.tabBtn, ...(filterStatus === 'pending' ? styles.tabBtnActive : {}) }}
+                  onClick={() => setFilterStatus('pending')}
+                >
+                  Offen ({pendingCount})
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* TABLE CONTAINER */}
+          <main style={styles.mainContent}>
+            <CustomerTable 
+              customers={filteredCustomers}
+              onSelectCustomer={(c) => setSelectedCustomer(c)}
+              onGeneratePdf={(c) => handleGenerateSinglePdf(c)}
+            />
+          </main>
+        </>
+      )}
 
       {/* PREVIEW & EDIT MODAL */}
       {selectedCustomer && (
@@ -435,6 +535,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     height: '100vh',
+    width: '100vw',
     backgroundColor: 'var(--color-bg-base)',
     color: 'var(--color-text-primary)',
     overflow: 'hidden',
@@ -456,6 +557,37 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '4px',
     letterSpacing: '0.06em',
     border: '1px solid rgba(255, 255, 255, 0.15)',
+  },
+  btnBack: {
+    backgroundColor: 'var(--color-bg-secondary)',
+    color: 'var(--color-text-primary)',
+    border: '1px solid var(--color-border)',
+    borderRadius: '4px',
+    padding: '0.4rem 0.75rem',
+    fontSize: '0.78rem',
+    fontWeight: 600,
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.35rem',
+  },
+  activeProjectBadge: {
+    backgroundColor: 'var(--color-bg-secondary)',
+    color: 'var(--color-text-primary)',
+    border: '1px solid var(--color-border)',
+    borderRadius: '4px',
+    padding: '0.35rem 0.65rem',
+    fontSize: '0.75rem',
+    fontWeight: 700,
+  },
+  sharepointBadge: {
+    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+    color: '#16a34a',
+    border: '1px solid rgba(34, 197, 94, 0.3)',
+    borderRadius: '4px',
+    padding: '0.35rem 0.65rem',
+    fontSize: '0.72rem',
+    fontWeight: 600,
   },
   btnSecondary: {
     backgroundColor: 'transparent',
@@ -480,53 +612,53 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '0.75rem 1rem',
     display: 'flex',
     flexDirection: 'column',
-    gap: '0.2rem',
+    gap: '0.25rem',
   },
   statTitle: {
-    fontSize: '0.7rem',
-    color: 'var(--color-text-secondary)',
+    fontSize: '0.75rem',
     fontWeight: 600,
+    color: 'var(--color-text-secondary)',
     textTransform: 'uppercase',
-    letterSpacing: '0.05em',
+    letterSpacing: '0.04em',
   },
   statNum: {
-    fontSize: '1.6rem',
+    fontSize: '1.4rem',
     fontWeight: 800,
-    fontFamily: 'var(--font-mono)',
+    color: 'var(--color-text-primary)',
+    lineHeight: 1.1,
   },
   actionBar: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: '0 1.5rem 0.9rem 1.5rem',
-    gap: '1rem',
     flexWrap: 'wrap',
+    gap: '0.8rem',
   },
   btnPrimary: {
-    backgroundColor: 'var(--color-primary)',
     color: '#ffffff',
     border: 'none',
     borderRadius: '4px',
-    padding: '0.55rem 1rem',
+    padding: '0.5rem 0.9rem',
     fontSize: '0.8rem',
     fontWeight: 600,
     cursor: 'pointer',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
   },
-  filterTabs: {
+  tabContainer: {
     display: 'flex',
     backgroundColor: 'var(--color-bg-surface)',
     border: '1px solid var(--color-border)',
     borderRadius: '4px',
-    padding: '2px',
+    overflow: 'hidden',
   },
   tabBtn: {
+    padding: '0.45rem 0.8rem',
     backgroundColor: 'transparent',
     border: 'none',
     color: 'var(--color-text-secondary)',
-    padding: '0.35rem 0.75rem',
-    fontSize: '0.74rem',
+    fontSize: '0.75rem',
     fontWeight: 600,
-    borderRadius: '3px',
     cursor: 'pointer',
   },
   tabBtnActive: {

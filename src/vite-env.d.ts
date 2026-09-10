@@ -9,7 +9,6 @@ interface UpdateState {
   canSelfUpdate: boolean;
 }
 
-
 interface Window {
   api?: {
     getCustomers: () => Promise<any[]>;
@@ -23,6 +22,13 @@ interface Window {
     getSettingPresets: () => Promise<{ id: number; name: string; settings: any }[]>;
     saveSettingPreset: (name: string, settings: any) => Promise<{ id: number; name: string; settings: any }[]>;
     deleteSettingPreset: (id: number) => Promise<{ id: number; name: string; settings: any }[]>;
+    getProjects: () => Promise<any[]>;
+    createProject: (data: any) => Promise<any>;
+    updateProject: (project: any) => Promise<any>;
+    deleteProject: (id: string) => Promise<boolean>;
+    getActiveProject: () => Promise<any | null>;
+    setActiveProject: (id: string) => Promise<{ success: boolean; customers: any[]; project: any | null }>;
+    chooseDirectory: () => Promise<string | null>;
     generatePdfProtocol: (customer: any, settings?: any, openAfter?: boolean) => Promise<{ success: boolean; pdfPath?: string; error?: string }>;
     batchExportPdfs: (customerIds?: number[], settings?: any) => Promise<{ success: boolean; count?: number; folderPath?: string; error?: string }>;
     openPath: (targetPath: string) => Promise<boolean>;

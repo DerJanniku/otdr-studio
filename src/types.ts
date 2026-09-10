@@ -1,3 +1,15 @@
+export interface Project {
+  id: string;
+  name: string;
+  clusterName?: string;
+  providerName?: string;
+  sharepointPath?: string;
+  createdAt: string;
+  updatedAt: string;
+  totalCustomers?: number;
+  matchedCustomers?: number;
+}
+
 export interface CustomerItem {
   id: number;
   customerName: string;
@@ -15,6 +27,8 @@ export interface CustomerItem {
   sorFileName?: string;
   sorFilePath?: string;
   sorData?: any;
+  secondarySorData?: any;
+  macrobendWarning?: string;
   measuredAt?: string;
   technicianName?: string;
   
@@ -69,4 +83,3 @@ export interface AppSettings {
   launchFiberOnly?: boolean;
   columnMapping?: Partial<ExcelColumnMapping>;
 }
-

@@ -2,6 +2,7 @@ import { BrowserWindow, app } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import type { CustomerItem, AppSettings } from './CustomerStore';
+import { getFiberColorInfo } from './fiberColors';
 
 // The protocol HTML is assembled from customer/settings text that ultimately comes from
 // imported Excel files and .sor headers - external, untrusted input. Every such value must
@@ -61,7 +62,8 @@ export class PdfExporter {
     const otdrDeviceModelEsc = esc(settings.otdrDeviceModel);
     const launchFiberEsc = esc(settings.launchFiber);
     const orderIdEsc = esc(customer.orderId || `AUFTRAG-${customer.id}`);
-    const colorCodeEsc = esc(customer.colorCode || 'Rot (DIN 47100)');
+    const fiberInfo = getFiberColorInfo(effectiveFiberNr);
+    const colorCodeEsc = esc(customer.colorCode && !customer.colorCode.includes('DIN 47100') ? customer.colorCode : fiberInfo.label);
     const fiberTypeEsc = esc(customer.fiberType || 'Singlemode ITU-T G.657.A1 / G.652D (9/125 µm)');
     const sorFileNameEsc = esc(customer.sorFileName || `Job_${customer.id}.sor`);
 
@@ -178,7 +180,8 @@ export class PdfExporter {
 
     // Plot area of the trace chart: x in [46, 718], y in [24, 96] (viewBox 0 0 740 140)
     let svgPolyline = '';
-    if (sorData.tracePoints && sorData.tracePoints.length > 5) {
+    const hasTrace = Array.isArray(sorData.tracePoints) && sorData.tracePoints.length > 5;
+    if (hasTrace) {
       const pts = sorData.tracePoints;
       const minP = Math.min(...pts);
       const maxP = Math.max(...pts);
@@ -188,8 +191,6 @@ export class PdfExporter {
         const y = 96 - ((p - minP) / rangeP) * 72;
         return `${x.toFixed(1)},${y.toFixed(1)}`;
       }).join(' ');
-    } else {
-      svgPolyline = '46,34 100,37 100,27 104,39 240,52 240,55 400,66 400,69 560,80 560,30 564,84 630,88 630,28 634,90 718,92';
     }
 
     const html = `
@@ -419,6 +420,13 @@ export class PdfExporter {
     </tr>
   </table>
 
+  <!-- MACROBEND WARNING IF DETECTED -->
+  ${customer.macrobendWarning ? `
+  <div style="background:#fffbeb; border:1.5px solid #f59e0b; border-radius:4px; padding:3px 8px; margin-bottom:5px; font-size:6.8pt; color:#92400e;">
+    <strong>⚠️ Messwert-Auffälligkeit:</strong> ${esc(customer.macrobendWarning)}
+  </div>
+  ` : ''}
+
   <!-- TOP SUMMARY GRID -->
   <div class="grid-2">
     <!-- COL 1: Customer & Segment -->
@@ -528,7 +536,9 @@ export class PdfExporter {
       <text x="8" y="60" fill="#64748b" font-size="6.3" transform="rotate(-90 8 60)" text-anchor="middle">Pegel</text>
       <text x="382" y="119" fill="#64748b" font-size="6.3" text-anchor="middle">Distanz entlang der Trasse</text>
 
-      <polyline fill="none" stroke="#1e293b" stroke-width="1.1" points="${svgPolyline}" />
+      ${hasTrace 
+        ? `<polyline fill="none" stroke="#1e293b" stroke-width="1.1" points="${svgPolyline}" />`
+        : `<text x="382" y="62" fill="#64748b" font-size="8" text-anchor="middle">Keine Rückstreukurve (Trace-Punkte) in der SOR-Datei vorhanden</text>`}
 
       ${(() => {
         const events = filteredEvents;

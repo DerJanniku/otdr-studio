@@ -1,4 +1,5 @@
 import type { CustomerItem } from '../types';
+import { getFiberColorInfo } from '../utils/fiberColors';
 
 interface CustomerTableProps {
   customers: CustomerItem[];
@@ -60,8 +61,36 @@ export function CustomerTable({ customers, onSelectCustomer, onGeneratePdf }: Cu
                   <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>{street}, {city}</div>
                 </td>
                 <td>
-                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>{cableId} · Faser #{c.fiberNumber}</div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>{segment}</div>
+                  {(() => {
+                    const fiberNr = c.customOverrides?.fiberNumber || c.fiberNumber || 1;
+                    const fiberInfo = getFiberColorInfo(fiberNr);
+                    return (
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>{cableId}</span>
+                          <span 
+                            style={{ 
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              backgroundColor: fiberInfo.fiberHex, 
+                              color: fiberInfo.fiberTextColor,
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              fontSize: '0.68rem',
+                              fontWeight: 700,
+                              boxShadow: '0 1px 2px rgba(0,0,0,0.15)',
+                              border: fiberInfo.fiberHex === '#f8fafc' ? '1px solid #cbd5e1' : undefined
+                            }}
+                            title={fiberInfo.label}
+                          >
+                            F#{fiberNr} {fiberInfo.fiberColorName}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>{segment}</div>
+                      </div>
+                    );
+                  })()}
                 </td>
                 <td>
                   {isMatched ? (
@@ -80,6 +109,25 @@ export function CustomerTable({ customers, onSelectCustomer, onGeneratePdf }: Cu
                     <div>
                       <div style={{ fontWeight: 700, color: 'var(--color-text-primary)', fontSize: '0.8rem' }}>{loss}</div>
                       <div style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary)' }}>Länge: {length}</div>
+                      {c.macrobendWarning && (
+                        <div 
+                          style={{ 
+                            fontSize: '0.66rem', 
+                            color: '#b45309', 
+                            backgroundColor: '#fef3c7', 
+                            padding: '1px 4px', 
+                            borderRadius: '3px',
+                            fontWeight: 700, 
+                            marginTop: '3px', 
+                            display: 'inline-flex', 
+                            alignItems: 'center', 
+                            gap: '2px' 
+                          }}
+                          title={c.macrobendWarning}
+                        >
+                          ⚠️ Makrobiegung
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <span style={{ color: 'var(--color-text-muted)' }}>–</span>
