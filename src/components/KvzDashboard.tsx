@@ -107,6 +107,8 @@ export function KvzDashboard({
       {/* HEADER BAR */}
       <div style={styles.header}>
         <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <button onClick={onBack} style={{ padding: '0.4rem 0.8rem', background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', borderRadius: '6px', color: '#fff', cursor: 'pointer' }}>← Zurück zu Ausbaugebieten</button>
           <h1 style={styles.title}>Ausbaugebiete &amp; KVZs (NVTs)</h1>
           <p style={styles.subtitle}>
             Wähle ein Ausbaugebiet aus, um Messungen zuzuordnen und DIN EN 50346 Protokolle zu erstellen.
