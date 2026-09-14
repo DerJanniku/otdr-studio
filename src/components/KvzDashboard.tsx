@@ -245,11 +245,11 @@ export function KvzDashboard({
 
             <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
               <div>
-                <label style={styles.formLabel}>Name des Ausbaugebiets / Projekts *</label>
+                <label style={styles.formLabel}>Name des KVZs *</label>
                 <input
                   type="text"
                   required
-                  placeholder="z. B. Herrieden, Neunstetten, Bernau"
+                  placeholder="z. B. KVZ 1"
                   value={formData.name}
                   onChange={e => setFormData({ ...formData, name: e.target.value })}
                   style={styles.formInput}
@@ -279,30 +279,7 @@ export function KvzDashboard({
                 </div>
               </div>
 
-              <div>
-                <label style={styles.formLabel}>
-                  Lokaler SharePoint / OneDrive Sync-Ordner (optional)
-                </label>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <input
-                    type="text"
-                    placeholder="Pfad zum lokal synchronisierten SharePoint-Ordner"
-                    value={formData.sharepointPath}
-                    onChange={e => setFormData({ ...formData, sharepointPath: e.target.value })}
-                    style={{ ...styles.formInput, flex: 1, fontFamily: 'var(--font-mono)', fontSize: '0.75rem' }}
-                  />
-                  <button
-                    type="button"
-                    style={styles.btnSecondary}
-                    onClick={handleChooseFolder}
-                  >
-                    Ordner wählen
-                  </button>
-                </div>
-                <span style={styles.formHelp}>
-                  Tipp: Wähle deinen synchronisierten OneDrive-Ordner. OTDR Studio legt fertige PDFs dann vollautomatisch unter <code>/Job_XXX/Messungen/</code> ab.
-                </span>
-              </div>
+              
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
                 <button
