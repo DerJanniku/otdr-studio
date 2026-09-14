@@ -1,7 +1,7 @@
 import { BrowserWindow, app } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import type { CustomerItem, AppSettings } from './CustomerStore';
+import type { CustomerItem, AppSettings } from '../src/types';
 import { getFiberColorInfo } from './fiberColors';
 
 // The protocol HTML is assembled from customer/settings text that ultimately comes from

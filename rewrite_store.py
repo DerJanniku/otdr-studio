@@ -1,9 +1,11 @@
-import * as fs from 'fs';
+import os
+
+code = """import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import ExcelJS from 'exceljs';
 import { getFiberColorInfo } from './fiberColors';
-import type { Project, Cluster, KVZ, CustomerItem, AppSettings, ExcelColumnMapping } from '../src/types';
+import { Project, Cluster, KVZ, CustomerItem, AppSettings, ExcelColumnMapping } from '../src/types';
 
 export interface SettingsPreset {
   id: number;
@@ -40,7 +42,7 @@ export class CustomerStore {
   
   private activeProjectId: string = '';
   private activeClusterId: string = '';
-  public activeKvzId: string = '';
+  private activeKvzId: string = '';
   
   private settings: AppSettings = DEFAULT_SETTINGS;
   private presets: SettingsPreset[] = [];
@@ -48,6 +50,7 @@ export class CustomerStore {
   private projects: Project[] = [];
   private clusters: Cluster[] = [];
   private kvzs: KVZ[] = [];
+  private customers: CustomerItem[] = [];
   
   public readonly isFirstRun: boolean;
 
@@ -144,6 +147,7 @@ export class CustomerStore {
   public getActiveProjectId(): string {
     return this.activeProjectId;
   }
+
   public getActiveProject(): Project | null {
     return this.projects.find(p => p.id === this.activeProjectId) || null;
   }
@@ -184,6 +188,7 @@ export class CustomerStore {
   public deleteProject(id: string): boolean {
     this.projects = this.projects.filter(p => p.id !== id);
     fs.writeFileSync(this.projectsFile, JSON.stringify(this.projects, null, 2), 'utf-8');
+    // Also cleanup cascaded files, optional but nice.
     return true;
   }
 
@@ -262,14 +267,7 @@ export class CustomerStore {
     return path.join(this.dataDir, `customers_${kvzId}.json`);
   }
 
-  
-  public setActiveKvzId(id: string) {
-    this.activeKvzId = id;
-  }
-  public getActiveKvzId(): string {
-    return this.activeKvzId;
-  }
-public getCustomers(kvzId: string): CustomerItem[] {
+  public getCustomers(kvzId: string): CustomerItem[] {
     const file = this.getCustomersFile(kvzId);
     if (fs.existsSync(file)) {
       try {
@@ -486,7 +484,7 @@ public getCustomers(kvzId: string): CustomerItem[] {
         }
       } else if (ext === '.csv') {
         const content = fs.readFileSync(filePath, 'utf-8');
-        const lines = content.split('\n').map(l => l.trim()).filter(Boolean);
+        const lines = content.split('\\n').map(l => l.trim()).filter(Boolean);
         const delimiter = (lines[0]?.match(/;/g)?.length || 0) >= (lines[0]?.match(/,/g)?.length || 0) ? ';' : ',';
         const splitLine = (line: string) => line.split(delimiter).map(p => p.replace(/^["']|["']$/g, '').trim());
 
@@ -535,3 +533,7 @@ public getCustomers(kvzId: string): CustomerItem[] {
     }
   }
 }
+"""
+
+with open('electron/CustomerStore.ts', 'w') as f:
+    f.write(code)

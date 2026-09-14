@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseSor } from 'sor-reader';
-import type { CustomerItem } from './CustomerStore';
+import type { CustomerItem } from '../src/types';
 
 export class SorMatcher {
   public static scanAndMatch(dirPath: string, customers: CustomerItem[]): {

@@ -1,10 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
-  getCustomers: () => ipcRenderer.invoke('get-customers'),
+  getCustomers: (kvzId: string) => ipcRenderer.invoke('get-customers', kvzId),
   saveCustomers: (customers: any[]) => ipcRenderer.invoke('save-customers', customers),
   updateCustomer: (customer: any) => ipcRenderer.invoke('update-customer', customer),
-  importCustomerFile: () => ipcRenderer.invoke('import-customer-file'),
+  importCustomerFile: (kvzId: string) => ipcRenderer.invoke('import-customer-file', kvzId),
   chooseUsbFolder: () => ipcRenderer.invoke('choose-usb-folder'),
   scanUsbFolder: (folderPath?: string) => ipcRenderer.invoke('scan-usb-folder', folderPath),
   getAppSettings: () => ipcRenderer.invoke('get-app-settings'),

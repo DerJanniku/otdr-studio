@@ -1,6 +1,8 @@
+import re
 
-import { useState, useEffect } from 'react';
-import type { KVZ, CustomerItem, AppSettings } from './types';
+code = """
+import React, { useState, useEffect } from 'react';
+import { Project, Cluster, KVZ, CustomerItem, AppSettings } from './types';
 import { DrilldownDashboard } from './components/DrilldownDashboard';
 import { CustomerTable } from './components/CustomerTable';
 import { ProtocolPreviewModal } from './components/ProtocolPreviewModal';
@@ -110,7 +112,7 @@ export function App() {
 
       <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {view === 'drilldown' ? (
-          <DrilldownDashboard onSelectKvz={handleKvzSelect} />
+          <DrilldownDashboard onSelectKvz={handleKvzSelect} settings={settings} />
         ) : (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '1rem' }}>
             <div style={{ marginBottom: '1rem', display: 'flex', gap: '1rem' }}>
@@ -154,3 +156,6 @@ export function App() {
     </div>
   );
 }
+"""
+with open('src/App.tsx', 'w') as f:
+    f.write(code)
