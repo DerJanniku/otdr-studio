@@ -83,6 +83,26 @@ app.whenReady().then(() => {
   usbWatcher.start();
 
   // IPC Handlers
+  
+  ipcMain.handle('get-ausbaugebiete', (_e, projectId) => customerStore.getAusbaugebiete(projectId));
+  ipcMain.handle('create-ausbaugebiet', (_e, projectId, name) => customerStore.createAusbaugebiet(projectId, name));
+  ipcMain.handle('get-kvzs', (_e, ausbaugebietId) => customerStore.getKVZs(ausbaugebietId));
+  ipcMain.handle('create-kvz', (_e, ausbaugebietId, name) => customerStore.createKVZ(ausbaugebietId, name));
+  ipcMain.handle('get-kvz-customers', (_e, kvzId) => customerStore.getKvzCustomers(kvzId));
+  ipcMain.handle('import-kvz-excel', async (_e, kvzId) => {
+    const { dialog } = require('electron');
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Excel / CSV importieren',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Tabellen', extensions: ['xlsx', 'xls', 'csv'] },
+        { name: 'Alle Dateien', extensions: ['*'] }
+      ]
+    });
+    if (canceled || filePaths.length === 0) return { canceled: true };
+    return await customerStore.importKvzCustomersAsync(kvzId, filePaths[0]);
+  });
+
   ipcMain.handle('get-customers', async () => {
     return customerStore.getCustomers();
   });
