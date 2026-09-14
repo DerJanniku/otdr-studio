@@ -10,6 +10,10 @@ contextBridge.exposeInMainWorld('api', {
   updateKVZ: (k: any) => ipcRenderer.invoke('update-kvz', k),
   deleteKVZ: (id: string) => ipcRenderer.invoke('delete-kvz', id),
 
+  selectSorFile: () => ipcRenderer.invoke('select-sor-file'),
+  generateKvzPdf: (kvzId: string, pmId: string) => ipcRenderer.invoke('generate-kvz-pdf', kvzId, pmId),
+
+
   createAusbaugebiet: (projectId: string, name: string) => ipcRenderer.invoke('create-ausbaugebiet', projectId, name),
   getKVZs: (ausbaugebietId: string) => ipcRenderer.invoke('get-kvzs', ausbaugebietId),
   createKVZ: (ausbaugebietId: string, name: string) => ipcRenderer.invoke('create-kvz', ausbaugebietId, name),

@@ -3,6 +3,7 @@ export interface Ausbaugebiet {
   id: string;
   projectId: string;
   name: string;
+  popMeasurements?: PopMeasurement[];
   clusterName?: string;
   providerName?: string;
   sharepointPath?: string;
@@ -12,10 +13,18 @@ export interface Ausbaugebiet {
   matchedCustomers?: number;
 }
 
+export interface PopMeasurement {
+  id: string;
+  fiberName: string;
+  sorFilePath?: string;
+  pdfGenerated?: boolean;
+}
+
 export interface KVZ {
   id: string;
   ausbaugebietId: string;
   name: string;
+  popMeasurements?: PopMeasurement[];
   clusterName?: string;
   providerName?: string;
   sharepointPath?: string;
@@ -29,6 +38,7 @@ export interface KVZ {
 export interface Project {
   id: string;
   name: string;
+  popMeasurements?: PopMeasurement[];
   clusterName?: string;
   providerName?: string;
   sharepointPath?: string;

@@ -91,6 +91,62 @@ app.whenReady().then(() => {
   ipcMain.handle('update-kvz', (_e, k) => customerStore.updateKVZ(k));
   ipcMain.handle('delete-kvz', (_e, id) => customerStore.deleteKVZ(id));
 
+  ipcMain.handle('select-sor-file', async () => {
+    const { dialog } = require('electron');
+    const res = await dialog.showOpenDialog(mainWindow!, {
+      properties: ['openFile'],
+      filters: [{ name: 'SOR Dateien', extensions: ['sor'] }]
+    });
+    if (res.canceled || res.filePaths.length === 0) return null;
+    return res.filePaths[0];
+  });
+
+  ipcMain.handle('generate-kvz-pdf', async (_e, kvzId, pmId) => {
+    try {
+      const kvzs = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'otdr-studio', 'kvzs.json'), 'utf-8'));
+      const kvz = kvzs.find((k: any) => k.id === kvzId);
+      if (!kvz) return { success: false, error: 'KVZ not found' };
+      const pm = kvz.popMeasurements?.find((p: any) => p.id === pmId);
+      if (!pm || !pm.sorFilePath) return { success: false, error: 'Measurement or sor file not found' };
+
+      const activeProj = customerStore.getActiveProject();
+      const buffer = fs.readFileSync(pm.sorFilePath);
+      const { parseSor } = require('./sorParser');
+      const sorData = parseSor(buffer);
+
+      const fakeCustomer = {
+         id: 999999,
+         jobId: kvz.name,
+         customerName: pm.fiberName,
+         city: activeProj?.name || '',
+         street: "POP Zuleitung",
+         status: 'matched' as any,
+         fiberNumber: 1,
+         sorFilePath: pm.sorFilePath,
+         sorData: sorData
+      };
+
+      const settings = customerStore.getSettings();
+      let deliveryDir = path.join(app.getPath('documents'), 'OTDR_Protokolle');
+      if (activeProj?.sharepointPath && fs.existsSync(activeProj.sharepointPath)) {
+        deliveryDir = path.join(activeProj.sharepointPath, kvz.name, 'Zuleitungen');
+      }
+      fs.mkdirSync(deliveryDir, { recursive: true });
+      
+      const fileName = `MTS2000_DIN_Protokoll_${kvz.name.replace(/[^a-zA-Z0-9_-]/g, '_')}_${pm.fiberName.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`;
+      const targetPath = path.join(deliveryDir, fileName);
+
+      await PdfExporter.generateSinglePdf(fakeCustomer, settings, targetPath);
+
+      const { shell } = require('electron');
+      await shell.openPath(targetPath);
+      return { success: true };
+    } catch(err: any) {
+       return { success: false, error: err.message };
+    }
+  });
+
+
   ipcMain.handle('create-ausbaugebiet', (_e, projectId, name) => customerStore.createAusbaugebiet(projectId, name));
   ipcMain.handle('get-kvzs', (_e, ausbaugebietId) => customerStore.getKVZs(ausbaugebietId));
   ipcMain.handle('create-kvz', (_e, ausbaugebietId, name) => customerStore.createKVZ(ausbaugebietId, name));
