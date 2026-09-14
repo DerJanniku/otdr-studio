@@ -12,6 +12,14 @@ interface UpdateState {
 interface Window {
   api?: {
     getCustomers: () => Promise<any[]>;
+
+    getAusbaugebiete: (projectId: string) => Promise<any[]>;
+    createAusbaugebiet: (projectId: string, name: string) => Promise<any>;
+    getKVZs: (ausbaugebietId: string) => Promise<any[]>;
+    createKVZ: (ausbaugebietId: string, name: string) => Promise<any>;
+    getKvzCustomers: (kvzId: string) => Promise<any[]>;
+    importKvzExcel: (kvzId: string) => Promise<{success?: boolean; error?: string; canceled?: boolean}>;
+
     saveCustomers: (customers: any[]) => Promise<boolean>;
     updateCustomer: (customer: any) => Promise<boolean>;
     importCustomerFile: () => Promise<{ success: boolean; count?: number; filePath?: string; customers?: any[]; canceled?: boolean; error?: string; warning?: string }>;

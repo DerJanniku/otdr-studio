@@ -1,3 +1,31 @@
+
+export interface Ausbaugebiet {
+  id: string;
+  projectId: string;
+  name: string;
+  clusterName?: string;
+  providerName?: string;
+  sharepointPath?: string;
+  createdAt: string;
+  updatedAt: string;
+  totalCustomers?: number;
+  matchedCustomers?: number;
+}
+
+export interface KVZ {
+  id: string;
+  ausbaugebietId: string;
+  name: string;
+  clusterName?: string;
+  providerName?: string;
+  sharepointPath?: string;
+  measurements?: any[];
+  createdAt: string;
+  updatedAt: string;
+  totalCustomers?: number;
+  matchedCustomers?: number;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -16,6 +44,7 @@ export interface CustomerItem {
   street: string;
   city: string;
   segment?: string;
+  kvzId?: string;
   cableId?: string;
   fiberNumber: number;
   fiberType?: string;
@@ -40,6 +69,7 @@ export interface CustomerItem {
     date?: string;
     time?: string;
     segment?: string;
+  kvzId?: string;
     cableId?: string;
     fiberNumber?: number;
   };
