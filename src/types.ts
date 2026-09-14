@@ -1,44 +1,17 @@
 export interface Project {
   id: string;
   name: string;
+  clusterName?: string;
   providerName?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface Cluster {
-  id: string;
-  projectId: string;
-  name: string;
   sharepointPath?: string;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface KvzMeasurement {
-  id: string;
-  fiberNumber: number;
-  fiberType?: string;
-  sorFileName?: string;
-  sorFilePath?: string;
-  sorData?: any;
-  status: 'pending' | 'matched' | 'exported';
-  measuredAt?: string;
-  pdfExportPath?: string;
-}
-
-export interface KVZ {
-  id: string;
-  clusterId: string;
-  name: string;
-  measurements: KvzMeasurement[];
-  createdAt: string;
-  updatedAt: string;
+  totalCustomers?: number;
+  matchedCustomers?: number;
 }
 
 export interface CustomerItem {
   id: number;
-  kvzId: string;
   customerName: string;
   street: string;
   city: string;
