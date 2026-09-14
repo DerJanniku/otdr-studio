@@ -464,8 +464,14 @@ export function App() {
                await loadAusbaugebiete(activeProject.id);
             }
           }}
-          onUpdateAusbaugebiet={async () => {}}
-          onDeleteAusbaugebiet={async () => {}}
+          onUpdateAusbaugebiet={async (a) => {
+            if(window.api?.updateAusbaugebiet) await window.api.updateAusbaugebiet(a);
+            await loadAusbaugebiete(activeProject!.id);
+          }}
+          onDeleteAusbaugebiet={async (id) => {
+            if(window.api?.deleteAusbaugebiet) await window.api.deleteAusbaugebiet(id);
+            await loadAusbaugebiete(activeProject!.id);
+          }}
           onOpenSettings={() => setShowSettings(true)}
           accentColor={settings.accentColor}
         />
@@ -489,8 +495,14 @@ export function App() {
                await loadKvzs(activeAusbaugebiet.id);
             }
           }}
-          onUpdateKVZ={async () => {}}
-          onDeleteKVZ={async () => {}}
+          onUpdateKVZ={async (k) => {
+            if(window.api?.updateKVZ) await window.api.updateKVZ(k);
+            await loadKvzs(activeAusbaugebiet!.id);
+          }}
+          onDeleteKVZ={async (id) => {
+            if(window.api?.deleteKVZ) await window.api.deleteKVZ(id);
+            await loadKvzs(activeAusbaugebiet!.id);
+          }}
           onOpenSettings={() => setShowSettings(true)}
           accentColor={settings.accentColor}
         />

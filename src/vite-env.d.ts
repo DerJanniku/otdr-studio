@@ -15,6 +15,10 @@ interface Window {
 
     getAusbaugebiete: (projectId: string) => Promise<any[]>;
     createAusbaugebiet: (projectId: string, name: string) => Promise<any>;
+    updateAusbaugebiet: (a: any) => Promise<void>;
+    deleteAusbaugebiet: (id: string) => Promise<void>;
+    updateKVZ: (k: any) => Promise<void>;
+    deleteKVZ: (id: string) => Promise<void>;
     getKVZs: (ausbaugebietId: string) => Promise<any[]>;
     createKVZ: (ausbaugebietId: string, name: string) => Promise<any>;
     getKvzCustomers: (kvzId: string) => Promise<any[]>;
