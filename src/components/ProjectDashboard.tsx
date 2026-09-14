@@ -111,9 +111,7 @@ export function ProjectDashboard({
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem' }}>
-          <button style={styles.btnSecondary} onClick={onOpenSettings}>
-            ⚙️ Firmeneinstellungen
-          </button>
+          
           <button style={{ ...styles.btnPrimary, backgroundColor: accentColor }} onClick={openCreateModal}>
             + Neues Ausbaugebiet anlegen
           </button>
