@@ -4,6 +4,12 @@ contextBridge.exposeInMainWorld('api', {
   getCustomers: () => ipcRenderer.invoke('get-customers'),
 
   getAusbaugebiete: (projectId: string) => ipcRenderer.invoke('get-ausbaugebiete', projectId),
+  
+  updateAusbaugebiet: (a: any) => ipcRenderer.invoke('update-ausbaugebiet', a),
+  deleteAusbaugebiet: (id: string) => ipcRenderer.invoke('delete-ausbaugebiet', id),
+  updateKVZ: (k: any) => ipcRenderer.invoke('update-kvz', k),
+  deleteKVZ: (id: string) => ipcRenderer.invoke('delete-kvz', id),
+
   createAusbaugebiet: (projectId: string, name: string) => ipcRenderer.invoke('create-ausbaugebiet', projectId, name),
   getKVZs: (ausbaugebietId: string) => ipcRenderer.invoke('get-kvzs', ausbaugebietId),
   createKVZ: (ausbaugebietId: string, name: string) => ipcRenderer.invoke('create-kvz', ausbaugebietId, name),

@@ -85,6 +85,12 @@ app.whenReady().then(() => {
   // IPC Handlers
   
   ipcMain.handle('get-ausbaugebiete', (_e, projectId) => customerStore.getAusbaugebiete(projectId));
+  
+  ipcMain.handle('update-ausbaugebiet', (_e, a) => customerStore.updateAusbaugebiet(a));
+  ipcMain.handle('delete-ausbaugebiet', (_e, id) => customerStore.deleteAusbaugebiet(id));
+  ipcMain.handle('update-kvz', (_e, k) => customerStore.updateKVZ(k));
+  ipcMain.handle('delete-kvz', (_e, id) => customerStore.deleteKVZ(id));
+
   ipcMain.handle('create-ausbaugebiet', (_e, projectId, name) => customerStore.createAusbaugebiet(projectId, name));
   ipcMain.handle('get-kvzs', (_e, ausbaugebietId) => customerStore.getKVZs(ausbaugebietId));
   ipcMain.handle('create-kvz', (_e, ausbaugebietId, name) => customerStore.createKVZ(ausbaugebietId, name));

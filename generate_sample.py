@@ -2,7 +2,7 @@ import json
 import os
 import time
 
-user_dir = os.path.expanduser("~/Library/Application Support/otdr-batch-studio")
+user_dir = os.path.expanduser("~/Library/Application Support/OTDR Studio/otdr-studio")
 
 # 1. Create Project "Herrieden"
 p_path = os.path.join(user_dir, "projects.json")
@@ -11,7 +11,6 @@ if os.path.exists(p_path):
     projects = json.load(open(p_path))
 
 herrieden_id = "proj_" + str(int(time.time()*1000))
-# Check if Herrieden exists
 for p in projects:
     if p["name"] == "Herrieden":
         herrieden_id = p["id"]
@@ -70,4 +69,3 @@ else:
     with open(k_path, "w") as f:
         json.dump(kvzs, f)
 
-print("Created sample data!")

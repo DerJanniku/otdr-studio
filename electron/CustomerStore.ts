@@ -213,6 +213,36 @@ export class CustomerStore {
   }
 
   
+  
+  public updateAusbaugebiet(a: any): any {
+    const p = path.join(this.userDir, 'ausbaugebiete.json');
+    if (!fs.existsSync(p)) return;
+    let data = JSON.parse(fs.readFileSync(p, 'utf-8'));
+    data = data.map((x:any) => x.id === a.id ? { ...x, ...a } : x);
+    fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf-8');
+  }
+  public deleteAusbaugebiet(id: string): any {
+    const p = path.join(this.userDir, 'ausbaugebiete.json');
+    if (!fs.existsSync(p)) return;
+    let data = JSON.parse(fs.readFileSync(p, 'utf-8'));
+    data = data.filter((x:any) => x.id !== id);
+    fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf-8');
+  }
+  public updateKVZ(k: any): any {
+    const p = path.join(this.userDir, 'kvzs.json');
+    if (!fs.existsSync(p)) return;
+    let data = JSON.parse(fs.readFileSync(p, 'utf-8'));
+    data = data.map((x:any) => x.id === k.id ? { ...x, ...k } : x);
+    fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf-8');
+  }
+  public deleteKVZ(id: string): any {
+    const p = path.join(this.userDir, 'kvzs.json');
+    if (!fs.existsSync(p)) return;
+    let data = JSON.parse(fs.readFileSync(p, 'utf-8'));
+    data = data.filter((x:any) => x.id !== id);
+    fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf-8');
+  }
+
   public getAusbaugebiete(projectId: string): any[] {
     const p = path.join(this.userDir, 'ausbaugebiete.json');
     if (!fs.existsSync(p)) return [];
