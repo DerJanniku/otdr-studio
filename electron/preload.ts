@@ -2,6 +2,14 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
   getCustomers: () => ipcRenderer.invoke('get-customers'),
+
+  getAusbaugebiete: (projectId: string) => ipcRenderer.invoke('get-ausbaugebiete', projectId),
+  createAusbaugebiet: (projectId: string, name: string) => ipcRenderer.invoke('create-ausbaugebiet', projectId, name),
+  getKVZs: (ausbaugebietId: string) => ipcRenderer.invoke('get-kvzs', ausbaugebietId),
+  createKVZ: (ausbaugebietId: string, name: string) => ipcRenderer.invoke('create-kvz', ausbaugebietId, name),
+  getKvzCustomers: (kvzId: string) => ipcRenderer.invoke('get-kvz-customers', kvzId),
+  importKvzExcel: (kvzId: string) => ipcRenderer.invoke('import-kvz-excel', kvzId),
+
   saveCustomers: (customers: any[]) => ipcRenderer.invoke('save-customers', customers),
   updateCustomer: (customer: any) => ipcRenderer.invoke('update-customer', customer),
   importCustomerFile: () => ipcRenderer.invoke('import-customer-file'),
