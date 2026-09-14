@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import type { KVZ } from '../types';
 
-interface KvzDashboardProps { parentAusbaugebietId: string; onBack: () => void; 
-  
-  
+interface KvzDashboardProps {
+  parentAusbaugebietId: string;
+  onBack: () => void;
   kvzs: KVZ[];
   activeKVZId: string;
   onSelectKVZ: (kvzId: string) => void;
@@ -15,6 +15,8 @@ interface KvzDashboardProps { parentAusbaugebietId: string; onBack: () => void;
 }
 
 export function KvzDashboard({
+  parentAusbaugebietId,
+  onBack,
   kvzs,
   activeKVZId,
   onSelectKVZ,
