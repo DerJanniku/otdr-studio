@@ -106,7 +106,8 @@ export function AusbaugebietDashboard({
     <div style={styles.container}>
       {/* HEADER BAR */}
       <div style={styles.header}>
-        <div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <button onClick={onBack} style={{ width: 'fit-content', padding: '0.4rem 0.8rem', background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', borderRadius: '6px', color: '#fff', cursor: 'pointer' }}>← Zurück zu Projekten</button>
           <h1 style={styles.title}>Ausbaugebiete</h1>
           <p style={styles.subtitle}>
             Wähle ein Ausbaugebiet aus, um Messungen zuzuordnen und DIN EN 50346 Protokolle zu erstellen.
