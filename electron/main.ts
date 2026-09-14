@@ -1,8 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { CustomerStore } from './CustomerStore';
-import type { AppSettings, CustomerItem, Project } from '../src/types';
+import { CustomerStore, type AppSettings, type CustomerItem } from './CustomerStore';
 import { SorMatcher } from './SorMatcher';
 import { PdfExporter } from './PdfExporter';
 import { UsbWatcher } from './UsbWatcher';
@@ -34,14 +33,14 @@ function archiveRawSorFiles(customers: CustomerItem[], matchedIds: number[]) {
 }
 
 const usbWatcher = new UsbWatcher((volumePath, volumeName) => {
-  const scanRes = SorMatcher.scanAndMatch(volumePath, customerStore.getCustomers(customerStore.getActiveKvzId()));
+  const scanRes = SorMatcher.scanAndMatch(volumePath, customerStore.getCustomers());
   archiveRawSorFiles(scanRes.updatedCustomers, scanRes.matchedIds);
-  customerStore.saveCustomers(customerStore.getActiveKvzId(), scanRes.updatedCustomers);
+  customerStore.saveCustomers(scanRes.updatedCustomers);
   mainWindow?.webContents.send('usb-scan-result', {
     volumeName,
     matchedCount: scanRes.matchedCount,
     matchedIds: scanRes.matchedIds,
-    customers: customerStore.getCustomers(customerStore.getActiveKvzId()),
+    customers: customerStore.getCustomers(),
   });
 });
 
@@ -85,29 +84,32 @@ app.whenReady().then(() => {
 
   // IPC Handlers
   ipcMain.handle('get-customers', async () => {
-    return customerStore.getCustomers(customerStore.getActiveKvzId());
+    return customerStore.getCustomers();
   });
 
-  ipcMain.handle('save-customers', async (_e, kvzId: string, customers) => {
-    return customerStore.saveCustomers(kvzId, customers);
+  ipcMain.handle('save-customers', async (_e, customers) => {
+    return customerStore.saveCustomers(customers);
   });
 
-  ipcMain.handle('update-customer', async (_e, kvzId: string, customer) => {
-    return customerStore.updateCustomer(kvzId, customer);
+  ipcMain.handle('update-customer', async (_e, customer) => {
+    return customerStore.updateCustomer(customer);
   });
 
-  ipcMain.handle('import-customer-file', async (_e, kvzId: string) => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
-      properties: ['openFile'],
+  ipcMain.handle('import-customer-file', async () => {
+    if (!mainWindow) return { success: false, error: 'No window' };
+    const res = await dialog.showOpenDialog(mainWindow, {
+      title: 'SharePoint Kundenliste importieren (Excel / CSV)',
       filters: [{ name: 'Excel / CSV', extensions: ['xlsx', 'xls', 'csv'] }],
-      title: 'Kundenliste importieren'
+      properties: ['openFile'],
     });
-    if (canceled || filePaths.length === 0) return { success: false, canceled: true };
-    const result = await customerStore.importExcelFile(kvzId, filePaths[0]);
-    if (result.success) {
-      return { ...result, customers: customerStore.getCustomers(kvzId) };
+
+    if (res.canceled || !res.filePaths[0]) {
+      return { success: false, canceled: true };
     }
-    return result;
+
+    const filePath = res.filePaths[0];
+    const importRes = await customerStore.importExcelFile(filePath);
+    return { ...importRes, filePath, customers: customerStore.getCustomers() };
   });
 
   ipcMain.handle('choose-usb-folder', async () => {
@@ -122,9 +124,9 @@ app.whenReady().then(() => {
     }
 
     const folderPath = res.filePaths[0];
-    const scanRes = SorMatcher.scanAndMatch(folderPath, customerStore.getCustomers(customerStore.getActiveKvzId()));
+    const scanRes = SorMatcher.scanAndMatch(folderPath, customerStore.getCustomers());
     archiveRawSorFiles(scanRes.updatedCustomers, scanRes.matchedIds);
-    customerStore.saveCustomers(customerStore.getActiveKvzId(), scanRes.updatedCustomers);
+    customerStore.saveCustomers(scanRes.updatedCustomers);
 
     return {
       success: true,
@@ -132,7 +134,7 @@ app.whenReady().then(() => {
       matchedCount: scanRes.matchedCount,
       matchedIds: scanRes.matchedIds,
       errors: scanRes.errors,
-      customers: customerStore.getCustomers(customerStore.getActiveKvzId()),
+      customers: customerStore.getCustomers(),
     };
   });
 
@@ -140,9 +142,9 @@ app.whenReady().then(() => {
     if (!folderPath || !fs.existsSync(folderPath)) {
       return { success: false, error: `Ordner existiert nicht: ${folderPath}` };
     }
-    const scanRes = SorMatcher.scanAndMatch(folderPath, customerStore.getCustomers(customerStore.getActiveKvzId()));
+    const scanRes = SorMatcher.scanAndMatch(folderPath, customerStore.getCustomers());
     archiveRawSorFiles(scanRes.updatedCustomers, scanRes.matchedIds);
-    customerStore.saveCustomers(customerStore.getActiveKvzId(), scanRes.updatedCustomers);
+    customerStore.saveCustomers(scanRes.updatedCustomers);
 
     return {
       success: true,
@@ -150,7 +152,7 @@ app.whenReady().then(() => {
       matchedCount: scanRes.matchedCount,
       matchedIds: scanRes.matchedIds,
       errors: scanRes.errors,
-      customers: customerStore.getCustomers(customerStore.getActiveKvzId()),
+      customers: customerStore.getCustomers(),
     };
   });
 
@@ -189,17 +191,6 @@ app.whenReady().then(() => {
   ipcMain.handle('delete-project', async (_e, id: string) => {
     return customerStore.deleteProject(id);
   });
-  // CLUSTERS
-  ipcMain.handle('get-clusters', async (_e, projectId: string) => customerStore.getClusters(projectId));
-  ipcMain.handle('create-cluster', async (_e, projectId: string, data: any) => customerStore.createCluster(projectId, data));
-  ipcMain.handle('update-cluster', async (_e, cluster: any) => customerStore.updateCluster(cluster));
-  ipcMain.handle('delete-cluster', async (_e, id: string) => customerStore.deleteCluster(id));
-
-  // KVZs
-  ipcMain.handle('get-kvzs', async (_e, clusterId: string) => customerStore.getKvzs(clusterId));
-  ipcMain.handle('create-kvz', async (_e, clusterId: string, data: any) => customerStore.createKvz(clusterId, data));
-  ipcMain.handle('update-kvz', async (_e, kvz: any) => customerStore.updateKvz(kvz));
-  ipcMain.handle('delete-kvz', async (_e, id: string) => customerStore.deleteKvz(id));
 
   ipcMain.handle('get-active-project', async () => {
     return customerStore.getActiveProject();
@@ -218,18 +209,6 @@ app.whenReady().then(() => {
     return res.filePaths[0];
   });
 
-  
-  ipcMain.handle('generate-kvz-pdf', async (_e, kvzId: string) => {
-    // Placeholder implementation for KVZ PDF generation
-    const { dialog } = require('electron');
-    dialog.showMessageBox({
-      type: 'info',
-      title: 'KVZ PDF',
-      message: 'KVZ PDF Protokoll (POP -> KVZ) wird in Kürze in PdfExporter implementiert.',
-    });
-    return { success: true };
-  });
-
   ipcMain.handle('generate-pdf-protocol', async (_e, customer, customSettings, openAfter = true) => {
     if (!customer.sorData) {
       return { success: false, error: 'Für diesen Kunden liegt noch keine OTDR-Messung vor. Bitte zuerst eine passende .sor-Datei zuordnen (USB-Stick scannen).' };
@@ -241,8 +220,8 @@ app.whenReady().then(() => {
       
       const activeProj = customerStore.getActiveProject();
       let deliveryDir = path.join(app.getPath('documents'), 'OTDR_Protokolle');
-      if (false) {
-        deliveryDir = path.join('', String(customer.id), 'Messungen');
+      if (activeProj?.sharepointPath && fs.existsSync(activeProj.sharepointPath)) {
+        deliveryDir = path.join(activeProj.sharepointPath, String(customer.id), 'Messungen');
       }
       fs.mkdirSync(deliveryDir, { recursive: true });
       const targetPath = path.join(deliveryDir, fileName);
@@ -264,7 +243,7 @@ app.whenReady().then(() => {
       }
 
       customer.status = 'exported';
-      customerStore.updateCustomer(customerStore.getActiveKvzId(), customer);
+      customerStore.updateCustomer(customer);
 
       return { success: true, pdfPath: targetPath };
     } catch (err: any) {
@@ -277,14 +256,14 @@ app.whenReady().then(() => {
     try {
       const settings = customSettings || customerStore.getSettings();
       const activeProj = customerStore.getActiveProject();
-      const hasSharepoint = false;
+      const hasSharepoint = !!(activeProj?.sharepointPath && fs.existsSync(activeProj.sharepointPath));
       const timestamp = new Date().toISOString().slice(0, 10);
       const defaultDeliveryDir = path.join(app.getPath('documents'), 'OTDR_Protokolle', `Export_${timestamp}`);
       if (!hasSharepoint) {
         fs.mkdirSync(defaultDeliveryDir, { recursive: true });
       }
 
-      const allCustomers = customerStore.getCustomers(customerStore.getActiveKvzId());
+      const allCustomers = customerStore.getCustomers();
       const targetCustomers = (customerIds && customerIds.length > 0
         ? allCustomers.filter(c => customerIds.includes(c.id))
         : allCustomers.filter(c => c.status === 'matched' || c.status === 'exported')
@@ -297,7 +276,7 @@ app.whenReady().then(() => {
           const nameSafe = (cust.customOverrides?.customerName || cust.customerName).replace(/[^a-zA-Z0-9_-]/g, '_');
           const fileName = `MTS2000_DIN_Protokoll_Job${String(cust.id).padStart(3, '0')}_${nameSafe}.pdf`;
           const targetDir = hasSharepoint
-            ? path.join('', String(cust.id), 'Messungen')
+            ? path.join(activeProj!.sharepointPath!, String(cust.id), 'Messungen')
             : defaultDeliveryDir;
           fs.mkdirSync(targetDir, { recursive: true });
           const targetPath = path.join(targetDir, fileName);
@@ -314,7 +293,7 @@ app.whenReady().then(() => {
           }
 
           cust.status = 'exported';
-          customerStore.updateCustomer(customerStore.getActiveKvzId(), cust);
+          customerStore.updateCustomer(cust);
           exportedCount++;
         } catch (custErr: any) {
           console.error(`Failed to export PDF for job ${cust.id}:`, custErr);
@@ -322,7 +301,7 @@ app.whenReady().then(() => {
         }
       }
 
-      const openTarget = hasSharepoint ? '' : defaultDeliveryDir;
+      const openTarget = hasSharepoint ? activeProj!.sharepointPath! : defaultDeliveryDir;
       if (exportedCount > 0) await shell.openPath(openTarget);
 
       return { success: exportedCount > 0, count: exportedCount, folderPath: openTarget, error: failures.length > 0 ? failures.join('; ') : undefined };

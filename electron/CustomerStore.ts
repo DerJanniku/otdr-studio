@@ -3,7 +3,106 @@ import * as path from 'path';
 import { app } from 'electron';
 import ExcelJS from 'exceljs';
 import { getFiberColorInfo } from './fiberColors';
-import type { Project, Cluster, KVZ, CustomerItem, AppSettings, ExcelColumnMapping } from '../src/types';
+
+export interface Project {
+  id: string;
+  name: string;
+  clusterName?: string;
+  providerName?: string;
+  sharepointPath?: string;
+  createdAt: string;
+  updatedAt: string;
+  totalCustomers?: number;
+  matchedCustomers?: number;
+}
+
+export interface CustomerItem {
+  id: number;
+  customerName: string;
+  street: string;
+  city: string;
+  segment?: string;
+  cableId?: string;
+  fiberNumber: number;
+  fiberType?: string;
+  colorCode?: string;
+  orderId?: string;
+  notes?: string;
+  
+  status: 'pending' | 'matched' | 'exported';
+  sorFileName?: string;
+  sorFilePath?: string;
+  sorData?: any;
+  secondarySorData?: any;
+  macrobendWarning?: string;
+  measuredAt?: string;
+  technicianName?: string;
+  
+  customOverrides?: {
+    customerName?: string;
+    street?: string;
+    city?: string;
+    technicianName?: string;
+    date?: string;
+    time?: string;
+    segment?: string;
+    cableId?: string;
+    fiberNumber?: number;
+  };
+}
+
+export interface ExcelColumnMapping {
+  id: string;
+  customerName: string;
+  firstName: string;
+  lastName: string;
+  street: string;
+  zip: string;
+  city: string;
+  segment: string;
+  cableId: string;
+  fiberNumber: string;
+  orderId: string;
+}
+
+export const DEFAULT_COLUMN_MAPPING: ExcelColumnMapping = {
+  id: 'id, id-job, job-id, kunden-nr, kundennr, job, nr, nummer, no, client-id',
+  customerName: 'kunde, name, kundenname, client, teilnehmer, anschlussinhaber',
+  firstName: 'vorname, firstname, first name',
+  lastName: 'nachname, lastname, last name, familienname, surname',
+  street: 'straße, strasse, street, adresse, anschrift, address',
+  zip: 'plz, postleitzahl, zip, zip-code, postal, postalcode',
+  city: 'ort, stadt, wohnort, gemeinde, city, town',
+  segment: 'nvt, segment, strecke, trasse, abschnitt, cluster, route, section',
+  cableId: 'kabel, cable, kabel-id, kabelbezeichnung, cable-id',
+  fiberNumber: 'faser, faser-nr, fasernummer, fiber, strand, fiber-no',
+  orderId: 'auftrag, auftrags-nr, auftragsnummer, ticket, order, bestellung, vorgang, order-id',
+};
+
+export interface AppSettings {
+  companyName: string;
+  companyDept: string;
+  companyContact: string;
+  defaultTechnician: string;
+  providerName: string;
+  projectCluster: string;
+  launchFiber: string;
+  receiveFiber: string;
+  normTitle: string;
+  maxLossSplice: number;
+  maxLossConnector: number;
+  minOrl: number;
+  otdrDeviceModel: string;
+  logoBase64?: string;
+  signatureBase64?: string;
+  accentColor: string;
+  themeMode: 'dark' | 'light';
+  hideProvider?: boolean;
+  hideContractor?: boolean;
+  hideOrderId?: boolean;
+  launchFiberOnly?: boolean;
+  columnMapping?: Partial<ExcelColumnMapping>;
+}
 
 export interface SettingsPreset {
   id: number;
@@ -11,84 +110,205 @@ export interface SettingsPreset {
   settings: AppSettings;
 }
 
-const DEFAULT_SETTINGS: AppSettings = {
-  companyName: 'Firma Muster GmbH',
-  companyDept: 'Glasfaserausbau',
-  companyContact: 'Max Mustermann',
-  defaultTechnician: 'M. Mustermann',
-  providerName: 'Provider GmbH',
-  projectCluster: 'Projektgebiet Nord',
-  launchFiber: '1000 m Vorlauf',
-  receiveFiber: '500 m Nachlauf',
-  normTitle: 'DIN EN 50346:2010-04 / DIN EN 60793-1-40',
-  maxLossSplice: 0.15,
-  maxLossConnector: 0.50,
-  minOrl: 45.0,
-  otdrDeviceModel: '',
-  accentColor: '#3b82f6',
-  themeMode: 'dark',
-};
-
 export class CustomerStore {
-  private dataDir: string;
-  private settingsFile: string;
-  private presetsFile: string;
-  
-  private projectsFile: string;
-  private clustersFile: string;
-  private kvzsFile: string;
-  
-  private activeProjectId: string = '';
-  private activeClusterId: string = '';
-  public activeKvzId: string = '';
-  
-  private settings: AppSettings = DEFAULT_SETTINGS;
-  private presets: SettingsPreset[] = [];
-  
+  private userDir: string;
+  private settingsPath: string;
+  private presetsPath: string;
+  private projectsPath: string;
+  private activeProjectPath: string;
   private projects: Project[] = [];
-  private clusters: Cluster[] = [];
-  private kvzs: KVZ[] = [];
-  
+  private activeProjectId: string = 'default';
+  private customers: CustomerItem[] = [];
+  private settings: AppSettings;
+  private presets: SettingsPreset[] = [];
   public readonly isFirstRun: boolean;
 
   constructor() {
-    this.dataDir = path.join(app.getPath('userData'), 'OtdrBatchStudioData');
-    if (!fs.existsSync(this.dataDir)) {
-      fs.mkdirSync(this.dataDir, { recursive: true });
-    }
-    
-    this.settingsFile = path.join(this.dataDir, 'settings.json');
-    this.presetsFile = path.join(this.dataDir, 'presets.json');
-    this.projectsFile = path.join(this.dataDir, 'projects.json');
-    this.clustersFile = path.join(this.dataDir, 'clusters.json');
-    this.kvzsFile = path.join(this.dataDir, 'kvzs.json');
-    
-    this.isFirstRun = !fs.existsSync(this.settingsFile);
-    this.loadSettings();
-    this.loadPresets();
-    this.loadDataFiles();
+    this.userDir = path.join(app.getPath('userData'), 'otdr-studio');
+    fs.mkdirSync(this.userDir, { recursive: true });
+    this.settingsPath = path.join(this.userDir, 'settings.json');
+    this.presetsPath = path.join(this.userDir, 'settings_presets.json');
+    this.projectsPath = path.join(this.userDir, 'projects.json');
+    this.activeProjectPath = path.join(this.userDir, 'active_project.txt');
+
+    this.isFirstRun = !fs.existsSync(this.settingsPath);
+    this.settings = this.loadSettings();
+    this.presets = this.loadPresets();
+    this.initProjects();
+    this.customers = this.loadCustomersForProject(this.activeProjectId);
   }
 
-  private loadSettings() {
-    if (fs.existsSync(this.settingsFile)) {
+  private initProjects() {
+    if (fs.existsSync(this.projectsPath)) {
       try {
-        const raw = fs.readFileSync(this.settingsFile, 'utf-8');
-        this.settings = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+        const raw = fs.readFileSync(this.projectsPath, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          this.projects = parsed;
+        }
       } catch (e) {
-        console.error('Failed to load settings:', e);
+        console.error('Failed to parse projects.json:', e);
       }
-    } else {
-      this.saveSettings(this.settings);
     }
+
+    if (this.projects.length === 0) {
+      const defaultProj: Project = {
+        id: 'default',
+        name: this.settings.projectCluster || 'Standard-Ausbaugebiet',
+        clusterName: this.settings.projectCluster || 'Standard-Ausbaugebiet',
+        providerName: this.settings.providerName || '',
+        sharepointPath: '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      this.projects = [defaultProj];
+      this.saveProjectsToDisk();
+
+      // Migrate existing legacy customers.json if it exists
+      const legacyPath = path.join(this.userDir, 'customers.json');
+      const targetPath = this.getCustomersPath('default');
+      if (fs.existsSync(legacyPath) && !fs.existsSync(targetPath)) {
+        try {
+          fs.copyFileSync(legacyPath, targetPath);
+        } catch {}
+      }
+    }
+
+    if (fs.existsSync(this.activeProjectPath)) {
+      try {
+        const savedId = fs.readFileSync(this.activeProjectPath, 'utf-8').trim();
+        if (this.projects.some(p => p.id === savedId)) {
+          this.activeProjectId = savedId;
+        }
+      } catch {}
+    }
+
+    if (!this.projects.some(p => p.id === this.activeProjectId)) {
+      this.activeProjectId = this.projects[0].id;
+    }
+  }
+
+  private getCustomersPath(projectId: string): string {
+    return path.join(this.userDir, `customers_${projectId}.json`);
+  }
+
+  private saveProjectsToDisk() {
+    try {
+      fs.writeFileSync(this.projectsPath, JSON.stringify(this.projects, null, 2), 'utf-8');
+    } catch (e) {
+      console.error('Failed to save projects.json:', e);
+    }
+  }
+
+  public getProjects(): Project[] {
+    return this.projects.map(p => {
+      const custs = this.loadCustomersForProject(p.id);
+      const matched = custs.filter(c => c.status === 'matched' || c.status === 'exported').length;
+      return {
+        ...p,
+        totalCustomers: custs.length,
+        matchedCustomers: matched,
+      };
+    });
+  }
+
+  public getActiveProjectId(): string {
+    return this.activeProjectId;
+  }
+
+  public getActiveProject(): Project | null {
+    return this.projects.find(p => p.id === this.activeProjectId) || null;
+  }
+
+  public setActiveProject(id: string): { success: boolean; customers: CustomerItem[]; project: Project | null } {
+    const proj = this.projects.find(p => p.id === id);
+    if (!proj) return { success: false, customers: this.customers, project: null };
+    this.activeProjectId = id;
+    try {
+      fs.writeFileSync(this.activeProjectPath, id, 'utf-8');
+    } catch {}
+    this.customers = this.loadCustomersForProject(id);
+    return { success: true, customers: this.customers, project: proj };
+  }
+
+  public createProject(data: Partial<Project>): Project {
+    const id = 'proj_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    const now = new Date().toISOString();
+    const newProj: Project = {
+      id,
+      name: data.name?.trim() || 'Neues Ausbaugebiet',
+      clusterName: data.clusterName?.trim() || data.name?.trim() || '',
+      providerName: data.providerName?.trim() || this.settings.providerName || '',
+      sharepointPath: data.sharepointPath?.trim() || '',
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.projects.push(newProj);
+    this.saveProjectsToDisk();
+    this.saveCustomersForProject(id, []);
+    return newProj;
+  }
+
+  public updateProject(updated: Project): Project {
+    const idx = this.projects.findIndex(p => p.id === updated.id);
+    if (idx !== -1) {
+      this.projects[idx] = { ...updated, updatedAt: new Date().toISOString() };
+      this.saveProjectsToDisk();
+    }
+    return updated;
+  }
+
+  public deleteProject(id: string): boolean {
+    if (this.projects.length <= 1) return false;
+    this.projects = this.projects.filter(p => p.id !== id);
+    this.saveProjectsToDisk();
+    const cPath = this.getCustomersPath(id);
+    if (fs.existsSync(cPath)) {
+      try { fs.unlinkSync(cPath); } catch {}
+    }
+    if (this.activeProjectId === id) {
+      this.setActiveProject(this.projects[0].id);
+    }
+    return true;
+  }
+
+  private loadSettings(): AppSettings {
+    const defaults: AppSettings = {
+      companyName: 'Musterfirma GmbH',
+      companyDept: 'Netzabnahme & OTDR-Qualitätsprüfung',
+      companyContact: 'kontakt@musterfirma.de · Tel: +49 (0) 170 0000000',
+      defaultTechnician: '',
+      providerName: 'Ihr Auftraggeber / Netzbetreiber',
+      projectCluster: 'Beispiel-Ausbaugebiet',
+      launchFiber: '500 m Vorlauf · 500 m Nachlauf',
+      receiveFiber: '500 m Nachlauf',
+      normTitle: 'DIN EN 50346:2010-04 / DIN EN 60793-1-40',
+      maxLossSplice: 0.15,
+      maxLossConnector: 0.50,
+      minOrl: 45.0,
+      otdrDeviceModel: '',
+      accentColor: '#3b82f6',
+      themeMode: 'dark',
+    };
+
+    if (fs.existsSync(this.settingsPath)) {
+      try {
+        const raw = fs.readFileSync(this.settingsPath, 'utf-8');
+        return { ...defaults, ...JSON.parse(raw) };
+      } catch {
+        return defaults;
+      }
+    }
+    return defaults;
   }
 
   public saveSettings(newSettings: AppSettings): boolean {
-    this.settings = { ...this.settings, ...newSettings };
+    this.settings = newSettings;
     try {
-      fs.writeFileSync(this.settingsFile, JSON.stringify(this.settings, null, 2), 'utf-8');
+      fs.writeFileSync(this.settingsPath, JSON.stringify(this.settings, null, 2), 'utf-8');
       return true;
     } catch (e) {
-      console.error('Error saving settings:', e);
+      console.error('Failed to save settings.json:', e);
       return false;
     }
   }
@@ -97,13 +317,24 @@ export class CustomerStore {
     return this.settings;
   }
 
-  private loadPresets() {
-    if (fs.existsSync(this.presetsFile)) {
+  private loadPresets(): SettingsPreset[] {
+    if (fs.existsSync(this.presetsPath)) {
       try {
-        this.presets = JSON.parse(fs.readFileSync(this.presetsFile, 'utf-8'));
+        const raw = fs.readFileSync(this.presetsPath, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
       } catch (e) {
-        console.error('Failed to load presets:', e);
+        console.error('Failed to parse settings_presets.json:', e);
       }
+    }
+    return [];
+  }
+
+  private savePresetsToDisk() {
+    try {
+      fs.writeFileSync(this.presetsPath, JSON.stringify(this.presets, null, 2), 'utf-8');
+    } catch (e) {
+      console.error('Failed to save settings_presets.json:', e);
     }
   }
 
@@ -112,255 +343,218 @@ export class CustomerStore {
   }
 
   public savePreset(name: string, settings: AppSettings): SettingsPreset[] {
-    const id = Date.now();
-    this.presets.push({ id, name, settings });
-    fs.writeFileSync(this.presetsFile, JSON.stringify(this.presets, null, 2), 'utf-8');
+    const trimmedName = name.trim();
+    const existing = this.presets.find(p => p.name.toLowerCase() === trimmedName.toLowerCase());
+    if (existing) {
+      existing.settings = { ...settings };
+    } else {
+      const nextId = this.presets.reduce((max, p) => Math.max(max, p.id), 0) + 1;
+      this.presets.push({ id: nextId, name: trimmedName, settings: { ...settings } });
+    }
+    this.savePresetsToDisk();
     return this.presets;
   }
 
   public deletePreset(id: number): SettingsPreset[] {
     this.presets = this.presets.filter(p => p.id !== id);
-    fs.writeFileSync(this.presetsFile, JSON.stringify(this.presets, null, 2), 'utf-8');
+    this.savePresetsToDisk();
     return this.presets;
   }
 
-  private loadDataFiles() {
-    if (fs.existsSync(this.projectsFile)) {
-      try { this.projects = JSON.parse(fs.readFileSync(this.projectsFile, 'utf-8')); } catch (e) {}
-    }
-    if (fs.existsSync(this.clustersFile)) {
-      try { this.clusters = JSON.parse(fs.readFileSync(this.clustersFile, 'utf-8')); } catch (e) {}
-    }
-    if (fs.existsSync(this.kvzsFile)) {
-      try { this.kvzs = JSON.parse(fs.readFileSync(this.kvzsFile, 'utf-8')); } catch (e) {}
-    }
-  }
-  
-  // PROJECTS
-  public getProjects(): Project[] {
-    return this.projects;
-  }
-  
-  public getActiveProjectId(): string {
-    return this.activeProjectId;
-  }
-  public getActiveProject(): Project | null {
-    return this.projects.find(p => p.id === this.activeProjectId) || null;
-  }
-
-  public setActiveProject(id: string): { success: boolean; project: Project | null } {
-    const p = this.projects.find(x => x.id === id);
-    if (!p) {
-      this.activeProjectId = '';
-      return { success: false, project: null };
-    }
-    this.activeProjectId = p.id;
-    return { success: true, project: p };
-  }
-
-  public createProject(data: Partial<Project>): Project {
-    const newProj: Project = {
-      id: Date.now().toString(),
-      name: data.name || 'Neues Projekt',
-      providerName: data.providerName || '',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    this.projects.push(newProj);
-    fs.writeFileSync(this.projectsFile, JSON.stringify(this.projects, null, 2), 'utf-8');
-    return newProj;
-  }
-
-  public updateProject(updated: Project): Project {
-    const idx = this.projects.findIndex(p => p.id === updated.id);
-    if (idx !== -1) {
-      this.projects[idx] = { ...updated, updatedAt: new Date().toISOString() };
-      fs.writeFileSync(this.projectsFile, JSON.stringify(this.projects, null, 2), 'utf-8');
-      return this.projects[idx];
-    }
-    return updated;
-  }
-
-  public deleteProject(id: string): boolean {
-    this.projects = this.projects.filter(p => p.id !== id);
-    fs.writeFileSync(this.projectsFile, JSON.stringify(this.projects, null, 2), 'utf-8');
-    return true;
-  }
-
-  // CLUSTERS
-  public getClusters(projectId: string): Cluster[] {
-    return this.clusters.filter(c => c.projectId === projectId);
-  }
-  
-  public createCluster(projectId: string, data: Partial<Cluster>): Cluster {
-    const newCluster: Cluster = {
-      id: Date.now().toString(),
-      projectId,
-      name: data.name || 'Neues Ausbaugebiet',
-      sharepointPath: data.sharepointPath || '',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    this.clusters.push(newCluster);
-    fs.writeFileSync(this.clustersFile, JSON.stringify(this.clusters, null, 2), 'utf-8');
-    return newCluster;
-  }
-
-  public updateCluster(updated: Cluster): Cluster {
-    const idx = this.clusters.findIndex(c => c.id === updated.id);
-    if (idx !== -1) {
-      this.clusters[idx] = { ...updated, updatedAt: new Date().toISOString() };
-      fs.writeFileSync(this.clustersFile, JSON.stringify(this.clusters, null, 2), 'utf-8');
-      return this.clusters[idx];
-    }
-    return updated;
-  }
-  
-  public deleteCluster(id: string): boolean {
-    this.clusters = this.clusters.filter(c => c.id !== id);
-    fs.writeFileSync(this.clustersFile, JSON.stringify(this.clusters, null, 2), 'utf-8');
-    return true;
-  }
-
-  // KVZs
-  public getKvzs(clusterId: string): KVZ[] {
-    return this.kvzs.filter(k => k.clusterId === clusterId);
-  }
-  
-  public createKvz(clusterId: string, data: Partial<KVZ>): KVZ {
-    const newKvz: KVZ = {
-      id: Date.now().toString(),
-      clusterId,
-      name: data.name || 'Neuer KVZ / NVT',
-      measurements: data.measurements || [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    this.kvzs.push(newKvz);
-    fs.writeFileSync(this.kvzsFile, JSON.stringify(this.kvzs, null, 2), 'utf-8');
-    return newKvz;
-  }
-  
-  public updateKvz(updated: KVZ): KVZ {
-    const idx = this.kvzs.findIndex(k => k.id === updated.id);
-    if (idx !== -1) {
-      this.kvzs[idx] = { ...updated, updatedAt: new Date().toISOString() };
-      fs.writeFileSync(this.kvzsFile, JSON.stringify(this.kvzs, null, 2), 'utf-8');
-      return this.kvzs[idx];
-    }
-    return updated;
-  }
-  
-  public deleteKvz(id: string): boolean {
-    this.kvzs = this.kvzs.filter(k => k.id !== id);
-    fs.writeFileSync(this.kvzsFile, JSON.stringify(this.kvzs, null, 2), 'utf-8');
-    return true;
-  }
-
-  // CUSTOMERS
-  private getCustomersFile(kvzId: string): string {
-    return path.join(this.dataDir, `customers_${kvzId}.json`);
-  }
-
-  
-  public setActiveKvzId(id: string) {
-    this.activeKvzId = id;
-  }
-  public getActiveKvzId(): string {
-    return this.activeKvzId;
-  }
-public getCustomers(kvzId: string): CustomerItem[] {
-    const file = this.getCustomersFile(kvzId);
-    if (fs.existsSync(file)) {
+  private loadCustomersForProject(projectId: string): CustomerItem[] {
+    const cPath = this.getCustomersPath(projectId);
+    if (fs.existsSync(cPath)) {
       try {
-        return JSON.parse(fs.readFileSync(file, 'utf-8'));
+        const raw = fs.readFileSync(cPath, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length === 350 && parsed[349]?.customerName?.includes('Zimmermann')) {
+          const cleanInit = this.getDefaultInitialCustomers();
+          this.saveCustomersForProject(projectId, cleanInit);
+          return cleanInit;
+        }
+        if (Array.isArray(parsed)) return parsed;
       } catch (e) {
-        console.error('Error loading customers:', e);
+        console.error(`Failed to parse customers for project ${projectId}:`, e);
       }
+    }
+    if (projectId === 'default') {
+      const def = this.getDefaultInitialCustomers();
+      this.saveCustomersForProject(projectId, def);
+      return def;
     }
     return [];
   }
 
-  public saveCustomers(kvzId: string, customers: CustomerItem[]): boolean {
-    const file = this.getCustomersFile(kvzId);
+  private saveCustomersForProject(projectId: string, customers: CustomerItem[]): boolean {
+    const cPath = this.getCustomersPath(projectId);
     try {
-      fs.writeFileSync(file, JSON.stringify(customers, null, 2), 'utf-8');
+      fs.writeFileSync(cPath, JSON.stringify(customers, null, 2), 'utf-8');
       return true;
     } catch (e) {
-      console.error('Error saving customers:', e);
+      console.error(`Failed to save customers for project ${projectId}:`, e);
       return false;
     }
   }
 
-  public updateCustomer(kvzId: string, updated: CustomerItem): boolean {
-    const customers = this.getCustomers(kvzId);
-    const idx = customers.findIndex(c => c.id === updated.id);
-    if (idx !== -1) {
-      customers[idx] = updated;
-      return this.saveCustomers(kvzId, customers);
-    }
-    return false;
+  public saveCustomers(customers: CustomerItem[]): boolean {
+    this.customers = customers;
+    return this.saveCustomersForProject(this.activeProjectId, customers);
   }
 
-  // EXCEL IMPORT
-  public static detectColumns(
-    headerRow: string[],
-    userOverrides?: Partial<ExcelColumnMapping>
-  ): { colMap: Record<string, number>; score: number } {
-    const colMap: Record<string, number> = {};
-    const norm = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  public getCustomers(): CustomerItem[] {
+    return this.customers;
+  }
 
-    const aliases = {
-      id: ['id', 'nr', 'job', 'vorgang', 'kunde', 'knd', 'kundenid', 'auftrag'],
-      customerName: ['name', 'kunde', 'auftraggeber', 'anschlussinhaber'],
-      firstName: ['vorname', 'vor'],
-      lastName: ['nachname', 'nach'],
-      street: ['strasse', 'straße', 'str', 'adresse', 'anschrift'],
-      zip: ['plz', 'postleitzahl'],
-      city: ['ort', 'stadt', 'city'],
-      segment: ['segment', 'bereich', 'nvt', 'gebiet', 'cluster', 'verteiler'],
-      cableId: ['kabel', 'cable', 'kabelid', 'stammkabel'],
-      fiberNumber: ['faser', 'fiber', 'fasernr', 'fasernummer', 'ader'],
-      orderId: ['auftrag', 'order', 'bestellung', 'projekt'],
+  public updateCustomer(updated: CustomerItem): boolean {
+    const idx = this.customers.findIndex(c => c.id === updated.id);
+    if (idx === -1) return false;
+    this.customers[idx] = updated;
+    return this.saveCustomers(this.customers);
+  }
+
+  public getDefaultInitialCustomers(): CustomerItem[] {
+    const demoSorData = {
+      wavelength: '1310.0 nm',
+      pulseWidth: '10 ns',
+      refractiveIndex: '1.4675',
+      backscatter: '-79.00 dB',
+      resolution: 0.32,
+      lengthMeters: 7974.1,
+      totalLossDb: 2.655,
+      avgLossDbPerKm: 0.333,
+      orlDb: 54.2,
+      events: [
+        { nr: 1, distance: 0.501, loss: 0.047, reflectance: -52.71, slope: 0.256, type: 'Steckverbinder (Vorlauf ➔ NVt)', status: 'PASS' },
+        { nr: 2, distance: 8.475, loss: 0.0, reflectance: -33.26, slope: 0.333, type: 'Faserende (HÜP SC/APC)', status: 'PASS' }
+      ],
+      tracePoints: []
     };
 
+    const fiberInfo = getFiberColorInfo(1);
+
+    const demoCustomer: CustomerItem = {
+      id: 1,
+      customerName: 'Max Mustermann',
+      street: 'Am Stadtpark 14',
+      city: '12345 Musterstadt',
+      segment: 'NVt 01 (KVz-1) ➔ HÜP Mustermann (WE 01)',
+      cableId: 'K-12345-NVT01-HUEP01',
+      fiberNumber: 1,
+      fiberType: 'Singlemode ITU-T G.657.A1 (9/125 µm)',
+      colorCode: fiberInfo.label,
+      orderId: 'AUFTRAG-12345-10001',
+      notes: 'Beispiel-Datensatz (Demo)',
+      status: 'matched',
+      sorFileName: 'Faser_001.sor',
+      sorData: demoSorData,
+      measuredAt: new Date().toISOString(),
+    };
+
+    return [demoCustomer];
+  }
+
+  private static normalizeHeader(str: string): string {
+    return (str || '')
+      .toLowerCase()
+      .trim()
+      .replace(/ß/g, 'ss')
+      .replace(/ä/g, 'ae')
+      .replace(/ö/g, 'oe')
+      .replace(/ü/g, 'ue')
+      .replace(/[\s\-_.:/\\()[\]{}]+/g, '');
+  }
+
+  public static detectColumns(
+    headerCells: string[],
+    customMapping?: Partial<ExcelColumnMapping>
+  ): { colMap: Record<string, number>; score: number } {
+    const colMap: Record<string, number> = {};
     let vornameCol = -1;
     let nachnameCol = -1;
 
-    headerRow.forEach((cellRaw, idx) => {
-      const cell = norm(cellRaw);
-      if (!cell) return;
-      const substringMatch = (list: string[]) => list.some(a => cell.includes(a));
-      const hasNumberWord = cell.includes('nr') || cell.includes('nummer') || cell.includes('id');
-      const isTelefonOrHaus = cell.includes('telefon') || cell.includes('haus') || cell.includes('mail') || cell.includes('bemerkung');
+    const mapping: ExcelColumnMapping = {
+      id: customMapping?.id ?? DEFAULT_COLUMN_MAPPING.id,
+      customerName: customMapping?.customerName ?? DEFAULT_COLUMN_MAPPING.customerName,
+      firstName: customMapping?.firstName ?? DEFAULT_COLUMN_MAPPING.firstName,
+      lastName: customMapping?.lastName ?? DEFAULT_COLUMN_MAPPING.lastName,
+      street: customMapping?.street ?? DEFAULT_COLUMN_MAPPING.street,
+      zip: customMapping?.zip ?? DEFAULT_COLUMN_MAPPING.zip,
+      city: customMapping?.city ?? DEFAULT_COLUMN_MAPPING.city,
+      segment: customMapping?.segment ?? DEFAULT_COLUMN_MAPPING.segment,
+      cableId: customMapping?.cableId ?? DEFAULT_COLUMN_MAPPING.cableId,
+      fiberNumber: customMapping?.fiberNumber ?? DEFAULT_COLUMN_MAPPING.fiberNumber,
+      orderId: customMapping?.orderId ?? DEFAULT_COLUMN_MAPPING.orderId,
+    };
 
-      if (isTelefonOrHaus) return;
+    const parseAliases = (rawList: string) => {
+      if (!rawList || rawList.trim() === '') return [];
+      return rawList
+        .split(',')
+        .map(a => a.trim().toLowerCase())
+        .filter(Boolean);
+    };
 
-      if (userOverrides) {
-        if (userOverrides.customerName && norm(userOverrides.customerName) === cell) { colMap['name'] = idx; return; }
-        if (userOverrides.firstName && norm(userOverrides.firstName) === cell) { vornameCol = idx; return; }
-        if (userOverrides.lastName && norm(userOverrides.lastName) === cell) { nachnameCol = idx; return; }
-        if (userOverrides.street && norm(userOverrides.street) === cell) { colMap['street'] = idx; return; }
-        if (userOverrides.zip && norm(userOverrides.zip) === cell) { colMap['zip'] = idx; return; }
-        if (userOverrides.city && norm(userOverrides.city) === cell) { colMap['city'] = idx; return; }
-        if (userOverrides.segment && norm(userOverrides.segment) === cell) { colMap['segment'] = idx; return; }
-        if (userOverrides.cableId && norm(userOverrides.cableId) === cell) { colMap['cableId'] = idx; return; }
-        if (userOverrides.fiberNumber && norm(userOverrides.fiberNumber) === cell) { colMap['fiberNumber'] = idx; return; }
-        if (userOverrides.orderId && norm(userOverrides.orderId) === cell) { colMap['orderId'] = idx; return; }
-        if (userOverrides.id && norm(userOverrides.id) === cell) { colMap['id'] = idx; return; }
-      }
+    const aliases = {
+      fiberNumber: parseAliases(mapping.fiberNumber),
+      cableId: parseAliases(mapping.cableId),
+      orderId: parseAliases(mapping.orderId),
+      segment: parseAliases(mapping.segment),
+      zip: parseAliases(mapping.zip),
+      city: parseAliases(mapping.city),
+      street: parseAliases(mapping.street),
+      firstName: parseAliases(mapping.firstName),
+      lastName: parseAliases(mapping.lastName),
+      customerName: parseAliases(mapping.customerName),
+      id: parseAliases(mapping.id),
+    };
 
-      if (colMap['cableId'] === undefined && substringMatch(aliases.cableId)) colMap['cableId'] = idx;
-      else if (colMap['fiberNumber'] === undefined && substringMatch(aliases.fiberNumber)) colMap['fiberNumber'] = idx;
-      else if (colMap['segment'] === undefined && substringMatch(aliases.segment)) colMap['segment'] = idx;
-      else if (colMap['orderId'] === undefined && substringMatch(aliases.orderId) && !substringMatch(aliases.id)) colMap['orderId'] = idx;
+    // Pass 1: Exact matches
+    headerCells.forEach((rawHeader, idx) => {
+      const norm = CustomerStore.normalizeHeader(rawHeader);
+      if (!norm) return;
+
+      const exactMatch = (arr: string[]) => arr.length > 0 && arr.some(a => norm === CustomerStore.normalizeHeader(a));
+      const hasNumberWord = norm.includes('nr') || norm.includes('nummer') || norm.includes('num');
+
+      if (exactMatch(aliases.fiberNumber)) colMap['fiberNumber'] = idx;
+      else if (exactMatch(aliases.cableId)) colMap['cableId'] = idx;
+      else if (exactMatch(aliases.orderId)) colMap['orderId'] = idx;
+      else if (exactMatch(aliases.id)) colMap['id'] = idx;
+      else if (exactMatch(aliases.street)) colMap['street'] = idx;
+      else if (exactMatch(aliases.zip)) colMap['zip'] = idx;
+      else if (exactMatch(aliases.city)) colMap['city'] = idx;
+      else if (exactMatch(aliases.segment)) colMap['segment'] = idx;
+      else if (exactMatch(aliases.firstName)) vornameCol = idx;
+      else if (exactMatch(aliases.lastName) && !hasNumberWord) nachnameCol = idx;
+      else if (exactMatch(aliases.customerName) && !hasNumberWord) colMap['name'] = idx;
+    });
+
+    // Pass 2: Substring matches for unmapped columns
+    headerCells.forEach((rawHeader, idx) => {
+      if (Object.values(colMap).includes(idx) || vornameCol === idx || nachnameCol === idx) return;
+
+      const norm = CustomerStore.normalizeHeader(rawHeader);
+      if (!norm) return;
+
+      const substringMatch = (arr: string[]) => arr.length > 0 && arr.some(a => {
+        const n = CustomerStore.normalizeHeader(a);
+        return norm.includes(n) || n.includes(norm);
+      });
+
+      const hasNumberWord = norm.includes('nr') || norm.includes('nummer') || norm.includes('num');
+      const isTelefonOrHaus = norm.includes('telefon') || norm.includes('tel') || norm.includes('haus');
+
+      if (colMap['fiberNumber'] === undefined && substringMatch(aliases.fiberNumber)) colMap['fiberNumber'] = idx;
+      else if (colMap['cableId'] === undefined && substringMatch(aliases.cableId)) colMap['cableId'] = idx;
+      else if (colMap['orderId'] === undefined && substringMatch(aliases.orderId)) colMap['orderId'] = idx;
       else if (colMap['street'] === undefined && substringMatch(aliases.street)) colMap['street'] = idx;
+      else if (colMap['segment'] === undefined && substringMatch(aliases.segment)) colMap['segment'] = idx;
       else if (colMap['zip'] === undefined && substringMatch(aliases.zip)) colMap['zip'] = idx;
       else if (colMap['city'] === undefined && substringMatch(aliases.city)) colMap['city'] = idx;
       else if (vornameCol === -1 && substringMatch(aliases.firstName)) vornameCol = idx;
       else if (nachnameCol === -1 && substringMatch(aliases.lastName) && !hasNumberWord) nachnameCol = idx;
       else if (colMap['name'] === undefined && substringMatch(aliases.customerName) && !hasNumberWord) colMap['name'] = idx;
-      else if (colMap['id'] === undefined && !isTelefonOrHaus && (substringMatch(aliases.id) || hasNumberWord || cell.includes('job'))) colMap['id'] = idx;
+      else if (colMap['id'] === undefined && !isTelefonOrHaus && (substringMatch(aliases.id) || hasNumberWord || norm.includes('job'))) colMap['id'] = idx;
     });
 
     if (vornameCol >= 0 || nachnameCol >= 0) {
@@ -387,7 +581,6 @@ public getCustomers(kvzId: string): CustomerItem[] {
 
   private static buildCustomer(
     id: number,
-    kvzId: string,
     get: (key: string) => string,
     existing: CustomerItem | undefined
   ): CustomerItem {
@@ -406,7 +599,6 @@ public getCustomers(kvzId: string): CustomerItem[] {
 
     return {
       id,
-      kvzId,
       customerName: name.trim(),
       street: street.trim(),
       city: city.trim(),
@@ -429,13 +621,15 @@ public getCustomers(kvzId: string): CustomerItem[] {
     };
   }
 
-  public async importExcelFile(kvzId: string, filePath: string): Promise<{ success: boolean; count: number; warning?: string; error?: string }> {
+  public async importExcelFile(filePath: string): Promise<{ success: boolean; count: number; warning?: string; error?: string }> {
+    return this.importFromExcel(filePath);
+  }
+
+  public async importFromExcel(filePath: string): Promise<{ success: boolean; count: number; warning?: string; error?: string }> {
     try {
       const ext = path.extname(filePath).toLowerCase();
       let imported: CustomerItem[] = [];
       let warning: string | undefined;
-
-      let customers = this.getCustomers(kvzId);
 
       if (ext === '.xlsx' || ext === '.xls') {
         const workbook = new ExcelJS.Workbook();
@@ -480,9 +674,9 @@ public getCustomers(kvzId: string): CustomerItem[] {
           const id = parseInt(rawId.replace(/[^\d]/g, ''), 10);
           if (isNaN(id) || id <= 0) continue;
 
-          const existing = customers.find(c => c.id === id);
+          const existing = this.customers.find(c => c.id === id);
           const get = (key: string) => cellAt(colMap[key]);
-          imported.push(CustomerStore.buildCustomer(id, kvzId, get, existing));
+          imported.push(CustomerStore.buildCustomer(id, get, existing));
         }
       } else if (ext === '.csv') {
         const content = fs.readFileSync(filePath, 'utf-8');
@@ -509,9 +703,9 @@ public getCustomers(kvzId: string): CustomerItem[] {
           const id = parseInt(rawId.replace(/[^\d]/g, ''), 10);
           if (isNaN(id) || id <= 0) continue;
 
-          const existing = customers.find(c => c.id === id);
+          const existing = this.customers.find(c => c.id === id);
           const get = (key: string) => (colMap[key] !== undefined ? (parts[colMap[key]] || '') : '');
-          imported.push(CustomerStore.buildCustomer(id, kvzId, get, existing));
+          imported.push(CustomerStore.buildCustomer(id, get, existing));
         }
       }
 
@@ -524,7 +718,7 @@ public getCustomers(kvzId: string): CustomerItem[] {
           warning = `${duplicateCount} doppelte Job-ID(s) in der Liste gefunden - jeweils die letzte Zeile wurde übernommen.${warning ? ' ' + warning : ''}`;
         }
 
-        this.saveCustomers(kvzId, imported);
+        this.saveCustomers(imported);
         return { success: true, count: imported.length, warning };
       } else {
         return { success: false, count: 0, error: 'Keine gültigen Kundendaten gefunden.' };
