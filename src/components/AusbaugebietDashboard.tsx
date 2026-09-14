@@ -107,15 +107,13 @@ export function AusbaugebietDashboard({
       {/* HEADER BAR */}
       <div style={styles.header}>
         <div>
-          <h1 style={styles.title}>Ausbaugebiete &amp; Ausbaugebiete</h1>
+          <h1 style={styles.title}>Ausbaugebiete</h1>
           <p style={styles.subtitle}>
             Wähle ein Ausbaugebiet aus, um Messungen zuzuordnen und DIN EN 50346 Protokolle zu erstellen.
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem' }}>
-          <button style={styles.btnSecondary} onClick={onOpenSettings}>
-            ⚙️ Firmeneinstellungen
-          </button>
+          
           <button style={{ ...styles.btnPrimary, backgroundColor: accentColor }} onClick={openCreateModal}>
             + Neues Ausbaugebiet erstellen
           </button>
