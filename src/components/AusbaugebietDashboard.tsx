@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import type { Ausbaugebiet } from '../types';
 
-interface AusbaugebietDashboardProps { parentProjectId: string; onBack: () => void; 
-  
-  
+interface AusbaugebietDashboardProps {
+  parentProjectId: string;
+  onBack: () => void;
   ausbaugebiets: Ausbaugebiet[];
   activeAusbaugebietId?: string;
   onSelectAusbaugebiet: (ausbaugebietId: string) => void;
@@ -15,8 +15,10 @@ interface AusbaugebietDashboardProps { parentProjectId: string; onBack: () => vo
 }
 
 export function AusbaugebietDashboard({
+  parentProjectId,
+  onBack,
   ausbaugebiets,
-  activeAusbaugebietId, parentProjectId, onBack,
+  activeAusbaugebietId,
   onSelectAusbaugebiet,
   onCreateAusbaugebiet,
   onUpdateAusbaugebiet,
@@ -106,9 +108,8 @@ export function AusbaugebietDashboard({
     <div style={styles.container}>
       {/* HEADER BAR */}
       <div style={styles.header}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          <button onClick={onBack} style={{ width: 'fit-content', padding: '0.4rem 0.8rem', background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', borderRadius: '6px', color: '#fff', cursor: 'pointer' }}>← Zurück zu Projekten</button>
-          <h1 style={styles.title}>Ausbaugebiete</h1>
+        <div>
+          <h1 style={styles.title}>Ausbaugebiete &amp; Ausbaugebiete</h1>
           <p style={styles.subtitle}>
             Wähle ein Ausbaugebiet aus, um Messungen zuzuordnen und DIN EN 50346 Protokolle zu erstellen.
           </p>
@@ -116,7 +117,7 @@ export function AusbaugebietDashboard({
         <div style={{ display: 'flex', gap: '0.75rem' }}>
           
           <button style={{ ...styles.btnPrimary, backgroundColor: accentColor }} onClick={openCreateModal}>
-            + Neues Ausbaugebiet erstellen
+            + Neues Bereich anlegen
           </button>
         </div>
       </div>
@@ -237,7 +238,7 @@ export function AusbaugebietDashboard({
           <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
             <div style={styles.modalHeader}>
               <h2 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0 }}>
-                {editingAusbaugebiet ? 'Ausbaugebiet bearbeiten' : 'Neues Ausbaugebiet erstellen'}
+                {editingAusbaugebiet ? 'Ausbaugebiet bearbeiten' : 'Neues Bereich anlegen'}
               </h2>
               <button style={styles.closeBtn} onClick={() => setShowModal(false)}>✕</button>
             </div>
@@ -315,7 +316,7 @@ export function AusbaugebietDashboard({
                   type="submit"
                   style={{ ...styles.btnPrimary, backgroundColor: accentColor }}
                 >
-                  {editingAusbaugebiet ? 'Änderungen speichern' : 'Ausbaugebiet erstellen'}
+                  {editingAusbaugebiet ? 'Änderungen speichern' : 'Bereich anlegen'}
                 </button>
               </div>
             </form>
