@@ -473,20 +473,21 @@ export class CustomerStore {
     let nachnameCol = -1;
 
     const mapping: ExcelColumnMapping = {
-      id: customMapping?.id || DEFAULT_COLUMN_MAPPING.id,
-      customerName: customMapping?.customerName || DEFAULT_COLUMN_MAPPING.customerName,
-      firstName: customMapping?.firstName || DEFAULT_COLUMN_MAPPING.firstName,
-      lastName: customMapping?.lastName || DEFAULT_COLUMN_MAPPING.lastName,
-      street: customMapping?.street || DEFAULT_COLUMN_MAPPING.street,
-      zip: customMapping?.zip || DEFAULT_COLUMN_MAPPING.zip,
-      city: customMapping?.city || DEFAULT_COLUMN_MAPPING.city,
-      segment: customMapping?.segment || DEFAULT_COLUMN_MAPPING.segment,
-      cableId: customMapping?.cableId || DEFAULT_COLUMN_MAPPING.cableId,
-      fiberNumber: customMapping?.fiberNumber || DEFAULT_COLUMN_MAPPING.fiberNumber,
-      orderId: customMapping?.orderId || DEFAULT_COLUMN_MAPPING.orderId,
+      id: customMapping?.id ?? DEFAULT_COLUMN_MAPPING.id,
+      customerName: customMapping?.customerName ?? DEFAULT_COLUMN_MAPPING.customerName,
+      firstName: customMapping?.firstName ?? DEFAULT_COLUMN_MAPPING.firstName,
+      lastName: customMapping?.lastName ?? DEFAULT_COLUMN_MAPPING.lastName,
+      street: customMapping?.street ?? DEFAULT_COLUMN_MAPPING.street,
+      zip: customMapping?.zip ?? DEFAULT_COLUMN_MAPPING.zip,
+      city: customMapping?.city ?? DEFAULT_COLUMN_MAPPING.city,
+      segment: customMapping?.segment ?? DEFAULT_COLUMN_MAPPING.segment,
+      cableId: customMapping?.cableId ?? DEFAULT_COLUMN_MAPPING.cableId,
+      fiberNumber: customMapping?.fiberNumber ?? DEFAULT_COLUMN_MAPPING.fiberNumber,
+      orderId: customMapping?.orderId ?? DEFAULT_COLUMN_MAPPING.orderId,
     };
 
     const parseAliases = (rawList: string) => {
+      if (!rawList || rawList.trim() === '') return [];
       return rawList
         .split(',')
         .map(a => a.trim().toLowerCase())
@@ -507,63 +508,53 @@ export class CustomerStore {
       id: parseAliases(mapping.id),
     };
 
+    // Pass 1: Exact matches
     headerCells.forEach((rawHeader, idx) => {
       const norm = CustomerStore.normalizeHeader(rawHeader);
       if (!norm) return;
 
-      const exactMatch = (arr: string[]) => arr.some(a => norm === CustomerStore.normalizeHeader(a));
-      const substringMatch = (arr: string[]) => arr.some(a => {
+      const exactMatch = (arr: string[]) => arr.length > 0 && arr.some(a => norm === CustomerStore.normalizeHeader(a));
+      const hasNumberWord = norm.includes('nr') || norm.includes('nummer') || norm.includes('num');
+
+      if (exactMatch(aliases.fiberNumber)) colMap['fiberNumber'] = idx;
+      else if (exactMatch(aliases.cableId)) colMap['cableId'] = idx;
+      else if (exactMatch(aliases.orderId)) colMap['orderId'] = idx;
+      else if (exactMatch(aliases.id)) colMap['id'] = idx;
+      else if (exactMatch(aliases.street)) colMap['street'] = idx;
+      else if (exactMatch(aliases.zip)) colMap['zip'] = idx;
+      else if (exactMatch(aliases.city)) colMap['city'] = idx;
+      else if (exactMatch(aliases.segment)) colMap['segment'] = idx;
+      else if (exactMatch(aliases.firstName)) vornameCol = idx;
+      else if (exactMatch(aliases.lastName) && !hasNumberWord) nachnameCol = idx;
+      else if (exactMatch(aliases.customerName) && !hasNumberWord) colMap['name'] = idx;
+    });
+
+    // Pass 2: Substring matches for unmapped columns
+    headerCells.forEach((rawHeader, idx) => {
+      if (Object.values(colMap).includes(idx) || vornameCol === idx || nachnameCol === idx) return;
+
+      const norm = CustomerStore.normalizeHeader(rawHeader);
+      if (!norm) return;
+
+      const substringMatch = (arr: string[]) => arr.length > 0 && arr.some(a => {
         const n = CustomerStore.normalizeHeader(a);
         return norm.includes(n) || n.includes(norm);
       });
 
       const hasNumberWord = norm.includes('nr') || norm.includes('nummer') || norm.includes('num');
+      const isTelefonOrHaus = norm.includes('telefon') || norm.includes('tel') || norm.includes('haus');
 
-      if (exactMatch(aliases.fiberNumber)) {
-        colMap['fiberNumber'] = idx;
-      } else if (exactMatch(aliases.cableId)) {
-        colMap['cableId'] = idx;
-      } else if (exactMatch(aliases.orderId)) {
-        colMap['orderId'] = idx;
-      } else if (exactMatch(aliases.id)) {
-        colMap['id'] = idx;
-      } else if (exactMatch(aliases.street)) {
-        colMap['street'] = idx;
-      } else if (exactMatch(aliases.zip)) {
-        colMap['zip'] = idx;
-      } else if (exactMatch(aliases.city)) {
-        colMap['city'] = idx;
-      } else if (exactMatch(aliases.segment)) {
-        colMap['segment'] = idx;
-      } else if (exactMatch(aliases.firstName)) {
-        vornameCol = idx;
-      } else if (exactMatch(aliases.lastName) && !hasNumberWord) {
-        nachnameCol = idx;
-      } else if (exactMatch(aliases.customerName) && !hasNumberWord) {
-        colMap['name'] = idx;
-      } else if (substringMatch(aliases.fiberNumber)) {
-        colMap['fiberNumber'] = idx;
-      } else if (substringMatch(aliases.cableId)) {
-        colMap['cableId'] = idx;
-      } else if (substringMatch(aliases.orderId)) {
-        colMap['orderId'] = idx;
-      } else if (substringMatch(aliases.street)) {
-        colMap['street'] = idx;
-      } else if (substringMatch(aliases.segment)) {
-        colMap['segment'] = idx;
-      } else if (substringMatch(aliases.zip)) {
-        colMap['zip'] = idx;
-      } else if (substringMatch(aliases.city)) {
-        colMap['city'] = idx;
-      } else if (substringMatch(aliases.firstName)) {
-        vornameCol = idx;
-      } else if (substringMatch(aliases.lastName) && !hasNumberWord) {
-        nachnameCol = idx;
-      } else if (substringMatch(aliases.customerName) && !hasNumberWord) {
-        colMap['name'] = idx;
-      } else if (substringMatch(aliases.id) || hasNumberWord || norm.includes('job')) {
-        colMap['id'] = idx;
-      }
+      if (colMap['fiberNumber'] === undefined && substringMatch(aliases.fiberNumber)) colMap['fiberNumber'] = idx;
+      else if (colMap['cableId'] === undefined && substringMatch(aliases.cableId)) colMap['cableId'] = idx;
+      else if (colMap['orderId'] === undefined && substringMatch(aliases.orderId)) colMap['orderId'] = idx;
+      else if (colMap['street'] === undefined && substringMatch(aliases.street)) colMap['street'] = idx;
+      else if (colMap['segment'] === undefined && substringMatch(aliases.segment)) colMap['segment'] = idx;
+      else if (colMap['zip'] === undefined && substringMatch(aliases.zip)) colMap['zip'] = idx;
+      else if (colMap['city'] === undefined && substringMatch(aliases.city)) colMap['city'] = idx;
+      else if (vornameCol === -1 && substringMatch(aliases.firstName)) vornameCol = idx;
+      else if (nachnameCol === -1 && substringMatch(aliases.lastName) && !hasNumberWord) nachnameCol = idx;
+      else if (colMap['name'] === undefined && substringMatch(aliases.customerName) && !hasNumberWord) colMap['name'] = idx;
+      else if (colMap['id'] === undefined && !isTelefonOrHaus && (substringMatch(aliases.id) || hasNumberWord || norm.includes('job'))) colMap['id'] = idx;
     });
 
     if (vornameCol >= 0 || nachnameCol >= 0) {

@@ -36,6 +36,7 @@ export function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isImportingExcel, setIsImportingExcel] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [updateInfo, setUpdateInfo] = useState<{ latestVersion?: string; url?: string; canSelfUpdate?: boolean } | null>(null);
   const [updateState, setUpdateState] = useState<UpdateState | null>(null);
@@ -162,6 +163,7 @@ export function App() {
   const handleImportExcel = async () => {
     if (!window.api?.importCustomerFile) return;
     setLoading(true);
+    setIsImportingExcel(true);
     try {
       const res = await window.api.importCustomerFile();
       if (res.success && res.customers) {
@@ -179,6 +181,7 @@ export function App() {
       alert(`Import fehlgeschlagen: ${err.message}`);
     } finally {
       setLoading(false);
+      setIsImportingExcel(false);
     }
   };
 
@@ -431,7 +434,7 @@ export function App() {
                 onClick={handleImportExcel}
                 disabled={loading}
               >
-                📥 Kundenliste importieren (.xlsx / .csv)
+                {isImportingExcel ? '⏳ Lese Excel... Bitte warten' : '📥 Kundenliste importieren (.xlsx / .csv)'}
               </button>
               <button
                 style={{ ...styles.btnPrimary, backgroundColor: '#059669' }}
