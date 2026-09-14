@@ -19,6 +19,10 @@ interface Window {
     deleteAusbaugebiet: (id: string) => Promise<void>;
     updateKVZ: (k: any) => Promise<void>;
     deleteKVZ: (id: string) => Promise<void>;
+
+    selectSorFile: () => Promise<string | null>;
+    generateKvzPdf: (kvzId: string, pmId: string) => Promise<{success: boolean, error?: string}>;
+
     getKVZs: (ausbaugebietId: string) => Promise<any[]>;
     createKVZ: (ausbaugebietId: string, name: string) => Promise<any>;
     getKvzCustomers: (kvzId: string) => Promise<any[]>;

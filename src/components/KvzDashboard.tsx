@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { KVZ } from '../types';
+import type { KVZ, PopMeasurement } from '../types';
 
 interface KvzDashboardProps {
   parentAusbaugebietId: string;
@@ -30,6 +30,7 @@ export function KvzDashboard({
   const [editingKVZ, setEditingKVZ] = useState<KVZ | null>(null);
   const [formData, setFormData] = useState({
     name: '',
+    popMeasurements: [] as PopMeasurement[],
     clusterName: '',
     providerName: '',
     sharepointPath: '',
@@ -39,6 +40,7 @@ export function KvzDashboard({
     setEditingKVZ(null);
     setFormData({
       name: '',
+    popMeasurements: [] as PopMeasurement[],
       clusterName: '',
       providerName: '',
       sharepointPath: '',
@@ -51,6 +53,7 @@ export function KvzDashboard({
     setEditingKVZ(proj);
     setFormData({
       name: proj.name,
+      popMeasurements: proj.popMeasurements || [],
       clusterName: proj.clusterName || '',
       providerName: proj.providerName || '',
       sharepointPath: proj.sharepointPath || '',
