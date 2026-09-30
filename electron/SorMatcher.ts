@@ -8,17 +8,18 @@ export class SorMatcher {
     matchedCount: number;
     matchedIds: number[];
     errors: string[];
+    unmatched: string[];
     updatedCustomers: CustomerItem[];
   } {
     const matchedIds: number[] = [];
     const errors: string[] = [];
-    const customerList = [...customers];
+    const customerList = customers.map(c => ({ ...c }));
 
     // Skip OS-generated housekeeping folders - on a real USB stick .Spotlight-V100
     // alone can contain tens of thousands of files and make the recursive walk
     // effectively never reach the actual job folders.
     const SKIP_DIRS = new Set(['System Volume Information', '$RECYCLE.BIN', 'RECYCLER']);
-    const isSkippableDir = (name: string) => name.startsWith('.') || SKIP_DIRS.has(name);
+    const isSkippableDir = (name: string) => name.startsWith('.') || SKIP_DIRS.has(name) || name.toUpperCase() === '_ARCHIV';
 
     const findSorFiles = (dir: string): string[] => {
       let results: string[] = [];
@@ -41,98 +42,124 @@ export class SorMatcher {
     };
 
     const scanRoot = path.resolve(dirPath);
-    const sorFiles = findSorFiles(dirPath);
+    const sorFiles = findSorFiles(dirPath).sort();
 
+    // Only folder names that clearly are a job id count ("145", "Job_12", "12_Musterfrau").
+    // A free-text folder like "Musterdorf Hauptstraße 1" must not be read as job 1.
     const matchFolderId = (folderName: string): number | null => {
-      const folderMatches = folderName.match(/(?:job|kunde|nr)?_?(\d+)/i);
-      if (folderMatches && folderMatches[1]) {
-        const parsedId = parseInt(folderMatches[1], 10);
-        if (parsedId >= 1) return parsedId;
-      }
-      return null;
+      const m = folderName.trim().match(/^(?:job|kunde|nr|id)?[\s_-]*(\d+)(?:[\s_-].*)?$/i);
+      const id = m ? parseInt(m[1], 10) : NaN;
+      return id >= 1 ? id : null;
     };
 
-    // OTDR devices often name every file "Fiber001_1310nm.sor" regardless of job
-    // (001 = fiber/strand index, not a job id) and instead put each job's files
-    // into its own subfolder (e.g. a folder just called "3"). So when a file is
-    // nested one or more levels below the scanned root, the folder name is the
-    // more reliable signal and is tried before the filename.
+    // The MTS-2000 names every file "Fiber001_1310OE.sor" - 001 is the fiber index, not a job
+    // id - so a filename only counts when it starts with the id or an explicit job prefix.
     const matchFileId = (fileName: string): number | null => {
-      const fileMatches = fileName.match(/(?:job|kunde|nr|faser|k|c)?_?(\d+)/i);
-      if (fileMatches && fileMatches[1]) {
-        const parsedId = parseInt(fileMatches[1], 10);
-        if (parsedId >= 1) return parsedId;
-      }
-      return null;
+      const m = fileName.match(/^(?:job|kunde|nr|id)?[\s_-]*(\d+)(?=[\s_.-]|$)/i);
+      const id = m ? parseInt(m[1], 10) : NaN;
+      return id >= 1 ? id : null;
     };
+
+    const fiberIndexOf = (fileName: string): number | null => {
+      const m = fileName.match(/fiber[\s_-]*(\d+)/i);
+      return m ? parseInt(m[1], 10) : null;
+    };
+
+    type Measurement = { filePath: string; fileName: string; parsed: any; sor: any; wl: number; fiberIndex: number | null };
+    const byCustomer = new Map<number, Measurement[]>();
+    const unmatched: string[] = [];
 
     for (const filePath of sorFiles) {
+      const rel = path.relative(scanRoot, filePath);
       try {
         const fileName = path.basename(filePath);
         const folderName = path.basename(path.dirname(filePath));
         const isNested = path.resolve(path.dirname(filePath)) !== scanRoot;
-        const buf = fs.readFileSync(filePath);
-        const parsed = parseSor(new Uint8Array(buf));
+        const parsed = parseSor(new Uint8Array(fs.readFileSync(filePath)));
 
-        let candidateId: number | null = isNested
-          ? matchFolderId(folderName) ?? matchFileId(fileName)
-          : matchFileId(fileName) ?? matchFolderId(folderName);
+        let candidateId: number | null = matchFileId(fileName) ?? (isNested ? matchFolderId(folderName) : null);
 
         // Fall back to the SOR header ('cable ID', 'fiber ID', comments) if neither matched
         if (!candidateId && parsed.GenParams) {
           const combinedHeader = `${parsed.GenParams['cable ID'] || ''} ${parsed.GenParams['fiber ID'] || ''} ${parsed.GenParams.comments || ''}`;
-          const headerMatches = combinedHeader.match(/(?:job|kunde|nr|id|faser)?_?\s*(\d+)/i);
-          if (headerMatches && headerMatches[1]) {
+          const headerMatches = combinedHeader.match(/(?:job|kunde|nr|id)[\s_:-]*(\d+)/i);
+          if (headerMatches) {
             const parsedId = parseInt(headerMatches[1], 10);
             if (parsedId >= 1) candidateId = parsedId;
           }
         }
 
-        if (candidateId) {
-          const customer = customerList.find(c => c.id === candidateId);
-          if (customer) {
-            const newSor = this.formatParsedSor(parsed);
-            const newWl = parseFloat(String(newSor.wavelength ?? '').replace(/[^0-9.]/g, '')) || 0;
-
-            if (customer.sorData && customer.sorData.wavelength) {
-              const existingWl = parseFloat(String(customer.sorData.wavelength ?? '').replace(/[^0-9.]/g, '')) || 0;
-              if (existingWl > 0 && newWl > 0 && Math.abs(existingWl - newWl) > 100) {
-                const sor1310 = existingWl < newWl ? customer.sorData : newSor;
-                const sor1550 = existingWl < newWl ? newSor : customer.sorData;
-                const loss1310 = sor1310.totalLossDb;
-                const loss1550 = sor1550.totalLossDb;
-                if (typeof loss1310 === 'number' && typeof loss1550 === 'number') {
-                  const delta = loss1550 - loss1310;
-                  if (delta > 0.5) {
-                    customer.macrobendWarning = `Verdacht auf Makrobiegung / Faserknick in Kassette: Dämpfung bei 1550 nm (${loss1550.toFixed(2)} dB) ist um ${delta.toFixed(2)} dB höher als bei 1310 nm (${loss1310.toFixed(2)} dB).`;
-                  }
-                }
-                customer.secondarySorData = existingWl < newWl ? newSor : customer.sorData;
-              }
-            }
-
-            customer.status = 'matched';
-            customer.sorFileName = fileName;
-            customer.sorFilePath = filePath;
-            customer.sorData = newSor;
-            customer.measuredAt = parsed.FxdParams?.['date/time'] || new Date().toISOString();
-            if (parsed.GenParams?.operator) {
-              customer.technicianName = parsed.GenParams.operator;
-            }
-            if (!matchedIds.includes(candidateId)) matchedIds.push(candidateId);
-          }
+        if (!candidateId || !customerList.some(c => c.id === candidateId)) {
+          unmatched.push(rel);
+          continue;
         }
+        const sor = this.formatParsedSor(parsed);
+        const wl = parseFloat(String(sor.wavelength ?? '').replace(/[^0-9.]/g, '')) || 0;
+        const list = byCustomer.get(candidateId) || [];
+        list.push({ filePath, fileName, parsed, sor, wl, fiberIndex: fiberIndexOf(fileName) });
+        byCustomer.set(candidateId, list);
       } catch (err: any) {
-        errors.push(`Fehler bei ${path.basename(filePath)}: ${err.message}`);
+        errors.push(`Fehler bei ${rel}: ${err.message}`);
       }
+    }
+
+    for (const [id, all] of byCustomer) {
+      const customer = customerList.find(c => c.id === id)!;
+
+      // A job folder can hold several strands (Fiber001 + Fiber002). Use the strand that matches
+      // the customer's fiber number, otherwise the lowest one - never mix strands in one protocol.
+      const indices = [...new Set(all.map(m => m.fiberIndex ?? 0))].sort((a, b) => a - b);
+      const chosenIndex = indices.includes(customer.fiberNumber) ? customer.fiberNumber : indices[0];
+      const group = all.filter(m => (m.fiberIndex ?? 0) === chosenIndex);
+      if (indices.length > 1) {
+        errors.push(`Job #${id}: Messungen für mehrere Fasern gefunden (${indices.join(', ')}) - verwendet wurde Faser ${chosenIndex}. Bitte prüfen.`);
+      }
+
+      // Primary = usable measurement at the longest wavelength (1550 nm reacts to macrobends).
+      // Latest file per wavelength wins when a fiber was measured twice.
+      const perWl = new Map<number, Measurement>();
+      for (const m of group) perWl.set(m.wl, m);
+      const ranked = [...perWl.values()].sort((a, b) =>
+        Number(!!b.sor.dataQuality?.usable) - Number(!!a.sor.dataQuality?.usable) || b.wl - a.wl);
+      const primary = ranked[0];
+      const secondary = ranked.find(m => m !== primary && Math.abs(m.wl - primary.wl) > 100);
+
+      customer.macrobendWarning = undefined;
+      customer.secondarySorData = secondary?.sor;
+      if (secondary) {
+        const [low, high] = primary.wl < secondary.wl ? [primary, secondary] : [secondary, primary];
+        const loss1310 = low.sor.totalLossDb;
+        const loss1550 = high.sor.totalLossDb;
+        if (typeof loss1310 === 'number' && typeof loss1550 === 'number' && loss1550 - loss1310 > 0.5) {
+          customer.macrobendWarning = `Verdacht auf Makrobiegung / Faserknick in Kassette: Dämpfung bei ${high.wl.toFixed(0)} nm (${loss1550.toFixed(2)} dB) ist um ${(loss1550 - loss1310).toFixed(2)} dB höher als bei ${low.wl.toFixed(0)} nm (${loss1310.toFixed(2)} dB).`;
+        }
+      }
+
+      customer.status = 'matched';
+      customer.sorFileName = primary.fileName;
+      customer.sorFilePath = primary.filePath;
+      customer.sorData = primary.sor;
+      customer.measuredAt = this.plausibleDate(primary.parsed.FxdParams?.['date/time']);
+      if (primary.parsed.GenParams?.operator) {
+        customer.technicianName = primary.parsed.GenParams.operator;
+      }
+      matchedIds.push(id);
     }
 
     return {
       matchedCount: matchedIds.length,
-      matchedIds,
+      matchedIds: matchedIds.sort((a, b) => a - b),
       errors,
+      unmatched,
       updatedCustomers: customerList
     };
+  }
+
+  // The MTS-2000 writes its own clock into the file; with an unset clock that is January 2000.
+  // Such a date must not end up in an acceptance report, so the import time is used instead.
+  public static plausibleDate(raw: unknown): string {
+    const d = new Date(String(raw ?? '').replace(/\s*\(.*\)\s*$/, ''));
+    return !isNaN(d.getTime()) && d.getFullYear() >= 2015 ? d.toISOString() : new Date().toISOString();
   }
 
   public static formatParsedSor(parsed: any): any {
@@ -186,25 +213,22 @@ export class SorMatcher {
     // fehlende Felder mit Platzhaltern (1428.5 m, 0.684 dB, 54.2 dB, erfundene Muffen) aufgefuellt -
     // das erzeugt ein "BESTANDEN"-Protokoll aus einer Messung ohne jede Auswertung. Stattdessen
     // wird die Datenlage jetzt bewertet und fehlende Werte bleiben null.
-    const rawTrace = trace.map((t: any) => t?.power).filter((v: any) => typeof v === 'number');
-    const zeroCount = rawTrace.filter((v: number) => v === 0).length;
-    const zeroRatio = rawTrace.length > 0 ? zeroCount / rawTrace.length : 1;
-    let rises = 0;
-    let falls = 0;
-    for (let i = 1; i < rawTrace.length; i++) {
-      if (rawTrace[i] > rawTrace[i - 1]) rises++;
-      else if (rawTrace[i] < rawTrace[i - 1]) falls++;
-    }
-    // Eine echte OTDR-Kurve verlaeuft nahezu monoton. Liegt das Verhaeltnis nahe 50:50, ist der
-    // Trace Rauschen (z. B. Messung gegen ein aktives Signal) und als Nachweis unbrauchbar.
-    const monotonicity = (rises + falls) > 0 ? Math.abs(rises - falls) / (rises + falls) : 0;
+    // Only the fiber itself (launch event to end event) is judged. Behind the fiber end the
+    // trace is the noise floor and legitimately full of zeros.
+    const firstKm = events[0]?.distance ?? 0;
+    const endKm = events.length >= 2 ? events[events.length - 1].distance : 0;
+    const fiberTrace = trace
+      .filter((t: any) => typeof t?.power === 'number' && t.distance >= firstKm && t.distance <= endKm)
+      .map((t: any) => t.power as number);
+    const zeroRatio = fiberTrace.length > 0 ? fiberTrace.filter((v: number) => v === 0).length / fiberTrace.length : 0;
 
     const warnings: string[] = [];
     const hasSummary = (summary['total loss'] || 0) > 0 && (summary['loss end'] || 0) > 0;
-    if (!hasSummary) warnings.push('Die SOR-Datei enthaelt keine Auswertung (Summary leer): keine Streckendaempfung, keine Laenge, kein ORL.');
-    if (events.length === 0) warnings.push('Keine Ereignisse in der SOR-Datei gefunden.');
-    if (zeroRatio > 0.05) warnings.push(`Messkurve unbrauchbar: ${(zeroRatio * 100).toFixed(1)} % der Messpunkte sind 0.`);
-    if (monotonicity < 0.5 && rawTrace.length > 50) warnings.push('Messkurve verlaeuft nicht monoton (Rauschen statt Rueckstreukurve).');
+    if (!hasSummary) warnings.push('Die SOR-Datei enthält keine Auswertung (Summary leer): keine Streckendämpfung, keine Länge.');
+    if (events.length < 2) warnings.push('Kein Faserende erkannt - die Messung enthält nur ein Ereignis.');
+    else if (endKm - firstKm < 0.005) warnings.push('Faserende liegt direkt am Startereignis - Strecke nicht gemessen.');
+    // A measurement against an active (lit) fiber shows up as dropouts inside the fiber section.
+    if (zeroRatio > 0.05) warnings.push(`Messkurve unbrauchbar: ${(zeroRatio * 100).toFixed(1)} % der Messpunkte innerhalb der Faser sind 0.`);
 
     return {
       wavelength: fxd.wavelength || null,
@@ -224,7 +248,6 @@ export class SorMatcher {
         usable: warnings.length === 0,
         hasSummary,
         zeroRatio,
-        monotonicity,
         warnings
       }
     };

@@ -28,7 +28,7 @@ export function CustomerTable({ customers, onSelectCustomer, onGeneratePdf }: Cu
             <th style={{ width: '230px' }}>Kunde &amp; Standort</th>
             <th>Kabel-ID / Trassenabschnitt</th>
             <th style={{ width: '190px' }}>OTDR-Messung</th>
-            <th style={{ width: '130px' }}>Werte (@1310 nm)</th>
+            <th style={{ width: '130px' }}>Messwerte</th>
             <th style={{ width: '220px', textAlign: 'right' }}>Aktionen</th>
           </tr>
         </thead>
@@ -93,7 +93,12 @@ export function CustomerTable({ customers, onSelectCustomer, onGeneratePdf }: Cu
                   })()}
                 </td>
                 <td>
-                  {isMatched ? (
+                  {isMatched && c.sorData?.dataQuality && !c.sorData.dataQuality.usable ? (
+                    <div title={c.sorData.dataQuality.warnings.join('\n')}>
+                      <span style={styles.badgeError}>UNBRAUCHBAR: {c.sorFileName}</span>
+                      <div style={{ fontSize: '0.7rem', color: '#ef4444', marginTop: '2px' }}>Neu messen - kein Protokoll möglich</div>
+                    </div>
+                  ) : isMatched ? (
                     <div>
                       <span style={styles.badgeSuccess}>BEREIT: {c.sorFileName || `Job_${c.id}.sor`}</span>
                       <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
@@ -201,6 +206,16 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: 'rgba(34, 197, 94, 0.12)',
     color: '#22c55e',
     borderRadius: '3px',
+    fontSize: '0.7rem',
+    fontWeight: 700,
+    fontFamily: 'var(--font-mono)',
+  },
+  badgeError: {
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    color: '#ef4444',
+    border: '1px solid rgba(239, 68, 68, 0.35)',
+    padding: '2px 6px',
+    borderRadius: '4px',
     fontSize: '0.7rem',
     fontWeight: 700,
     fontFamily: 'var(--font-mono)',

@@ -3,11 +3,36 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { CustomerStore, type AppSettings, type CustomerItem } from './CustomerStore';
 import { SorMatcher } from './SorMatcher';
+import { parseSor } from 'sor-reader';
 import { PdfExporter } from './PdfExporter';
 import { UsbWatcher } from './UsbWatcher';
 import { Updater } from './Updater';
 
 app.setName('OTDR Studio');
+
+// File/folder names from customer data: keep umlauts, drop characters Windows/SharePoint reject.
+function protocolFileName(customer: CustomerItem): string {
+  const name = customer.customOverrides?.customerName || customer.customerName;
+  return `MTS2000_DIN_Protokoll_Job${String(customer.id).padStart(3, '0')}_${safeName(name)}.pdf`;
+}
+
+// SharePoint layout: <Ordner>/<Job-ID>/Messungen. An existing folder that starts with the job id
+// ("145_Mustermann") is reused, so PDFs land next to the customer's other documents.
+function customerFolder(root: string, customer: CustomerItem): string {
+  const id = String(customer.id);
+  let folder = id;
+  try {
+    const existing = fs.readdirSync(root, { withFileTypes: true })
+      .find(d => d.isDirectory() && (d.name === id || new RegExp(`^0*${id}(?:[\\s_-]|$)`).test(d.name)));
+    if (existing) folder = existing.name;
+  } catch {}
+  return path.join(root, folder, 'Messungen');
+}
+
+function safeName(value: string): string {
+  // oxlint-disable-next-line no-control-regex
+  return String(value || '').replace(/[<>:"/\\|?*\u0000-\u001f]+/g, '_').replace(/\s+/g, '_').replace(/^[._]+|[._]+$/g, '').slice(0, 80) || 'unbenannt';
+}
 
 let mainWindow: BrowserWindow | null = null;
 const customerStore = new CustomerStore();
@@ -32,16 +57,29 @@ function archiveRawSorFiles(customers: CustomerItem[], matchedIds: number[]) {
   }
 }
 
-const usbWatcher = new UsbWatcher((volumePath, volumeName) => {
-  const scanRes = SorMatcher.scanAndMatch(volumePath, customerStore.getCustomers());
+// Scans a folder against the customers of the opened KVZ and persists the matches.
+function scanFolder(folderPath: string) {
+  const scanRes = SorMatcher.scanAndMatch(folderPath, customerStore.getCustomers());
   archiveRawSorFiles(scanRes.updatedCustomers, scanRes.matchedIds);
   customerStore.saveCustomers(scanRes.updatedCustomers);
-  mainWindow?.webContents.send('usb-scan-result', {
-    volumeName,
+  return {
+    success: true,
+    folderPath,
     matchedCount: scanRes.matchedCount,
     matchedIds: scanRes.matchedIds,
+    errors: scanRes.errors,
+    unmatched: scanRes.unmatched,
     customers: customerStore.getCustomers(),
-  });
+  };
+}
+
+const NO_KVZ_ERROR = 'Bitte zuerst einen KVZ öffnen - Kundenlisten und Messungen gehören immer zu einem KVZ.';
+
+const usbWatcher = new UsbWatcher((volumePath, volumeName) => {
+  // Without an opened KVZ there is no customer list to match against.
+  if (!customerStore.getActiveKvzId()) return;
+  const res = scanFolder(volumePath);
+  mainWindow?.webContents.send('usb-scan-result', { volumeName, ...res });
 });
 
 function compareVersions(a: string, b: string): number {
@@ -84,85 +122,90 @@ app.whenReady().then(() => {
 
   // IPC Handlers
   
-  ipcMain.handle('get-ausbaugebiete', (_e, projectId) => customerStore.getAusbaugebiete(projectId));
-  
+  ipcMain.handle('get-ausbaugebiete', (_e, projectId: string) => customerStore.getAusbaugebiete(projectId));
+  ipcMain.handle('create-ausbaugebiet', (_e, projectId: string, data) => customerStore.createAusbaugebiet(projectId, data || {}));
   ipcMain.handle('update-ausbaugebiet', (_e, a) => customerStore.updateAusbaugebiet(a));
-  ipcMain.handle('delete-ausbaugebiet', (_e, id) => customerStore.deleteAusbaugebiet(id));
+  ipcMain.handle('delete-ausbaugebiet', (_e, id: string) => customerStore.deleteAusbaugebiet(id));
+  ipcMain.handle('get-kvzs', (_e, ausbaugebietId: string) => customerStore.getKVZs(ausbaugebietId));
+  ipcMain.handle('create-kvz', (_e, ausbaugebietId: string, data) => customerStore.createKVZ(ausbaugebietId, data || {}));
   ipcMain.handle('update-kvz', (_e, k) => customerStore.updateKVZ(k));
-  ipcMain.handle('delete-kvz', (_e, id) => customerStore.deleteKVZ(id));
+  ipcMain.handle('delete-kvz', (_e, id: string) => customerStore.deleteKVZ(id));
+  ipcMain.handle('open-kvz', (_e, kvzId: string) => customerStore.openKvz(kvzId));
+  ipcMain.handle('close-kvz', () => customerStore.closeKvz());
 
-  ipcMain.handle('select-sor-file', async () => {
-    const { dialog } = require('electron');
-    const res = await dialog.showOpenDialog(mainWindow!, {
+  // POP -> KVZ feeder measurements live on the KVZ and get their own protocol.
+  ipcMain.handle('add-pop-measurement', async (_e, kvzId: string, fiberName: string) => {
+    if (!mainWindow) return { success: false, error: 'No window' };
+    const res = await dialog.showOpenDialog(mainWindow, {
+      title: 'Zuleitungsmessung POP → KVZ auswählen (.sor)',
       properties: ['openFile'],
-      filters: [{ name: 'SOR Dateien', extensions: ['sor'] }]
+      filters: [{ name: 'SOR Dateien', extensions: ['sor'] }],
     });
-    if (res.canceled || res.filePaths.length === 0) return null;
-    return res.filePaths[0];
-  });
-
-  ipcMain.handle('generate-kvz-pdf', async (_e, kvzId, pmId) => {
+    if (res.canceled || !res.filePaths[0]) return { success: false, canceled: true };
     try {
-      const kvzs = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'otdr-studio', 'kvzs.json'), 'utf-8'));
-      const kvz = kvzs.find((k: any) => k.id === kvzId);
-      if (!kvz) return { success: false, error: 'KVZ not found' };
-      const pm = kvz.popMeasurements?.find((p: any) => p.id === pmId);
-      if (!pm || !pm.sorFilePath) return { success: false, error: 'Measurement or sor file not found' };
-
-      const activeProj = customerStore.getActiveProject();
-      const buffer = fs.readFileSync(pm.sorFilePath);
-      const { parseSor } = require('./sorParser');
-      const sorData = parseSor(buffer);
-
-      const fakeCustomer = {
-         id: 999999,
-         jobId: kvz.name,
-         customerName: pm.fiberName,
-         city: activeProj?.name || '',
-         street: "POP Zuleitung",
-         status: 'matched' as any,
-         fiberNumber: 1,
-         sorFilePath: pm.sorFilePath,
-         sorData: sorData
-      };
-
-      const settings = customerStore.getSettings();
-      let deliveryDir = path.join(app.getPath('documents'), 'OTDR_Protokolle');
-      if (activeProj?.sharepointPath && fs.existsSync(activeProj.sharepointPath)) {
-        deliveryDir = path.join(activeProj.sharepointPath, kvz.name, 'Zuleitungen');
-      }
-      fs.mkdirSync(deliveryDir, { recursive: true });
-      
-      const fileName = `MTS2000_DIN_Protokoll_${kvz.name.replace(/[^a-zA-Z0-9_-]/g, '_')}_${pm.fiberName.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`;
-      const targetPath = path.join(deliveryDir, fileName);
-
-      await PdfExporter.generateSinglePdf(fakeCustomer, settings, targetPath);
-
-      const { shell } = require('electron');
-      await shell.openPath(targetPath);
-      return { success: true };
-    } catch(err: any) {
-       return { success: false, error: err.message };
+      const srcPath = res.filePaths[0];
+      const parsed = parseSor(new Uint8Array(fs.readFileSync(srcPath)));
+      const pmId = `pm_${Date.now()}`;
+      const archiveDir = path.join(app.getPath('documents'), 'OTDR_Protokolle', 'Rohdaten', 'Zuleitungen', kvzId);
+      fs.mkdirSync(archiveDir, { recursive: true });
+      const archived = path.join(archiveDir, `${pmId}_${path.basename(srcPath)}`);
+      fs.copyFileSync(srcPath, archived);
+      const kvz = customerStore.addPopMeasurement(kvzId, {
+        id: pmId,
+        fiberName: String(fiberName || '').trim() || path.basename(srcPath, '.sor'),
+        sorFileName: path.basename(srcPath),
+        sorFilePath: archived,
+        sorData: SorMatcher.formatParsedSor(parsed),
+        measuredAt: SorMatcher.plausibleDate(parsed.FxdParams?.['date/time']),
+        technicianName: parsed.GenParams?.operator || undefined,
+      });
+      if (!kvz) return { success: false, error: 'KVZ nicht gefunden.' };
+      return { success: true, kvz };
+    } catch (err: any) {
+      return { success: false, error: `SOR-Datei konnte nicht gelesen werden: ${err.message}` };
     }
   });
 
+  ipcMain.handle('delete-pop-measurement', (_e, kvzId: string, pmId: string) => customerStore.deletePopMeasurement(kvzId, pmId));
 
-  ipcMain.handle('create-ausbaugebiet', (_e, projectId, name) => customerStore.createAusbaugebiet(projectId, name));
-  ipcMain.handle('get-kvzs', (_e, ausbaugebietId) => customerStore.getKVZs(ausbaugebietId));
-  ipcMain.handle('create-kvz', (_e, ausbaugebietId, name) => customerStore.createKVZ(ausbaugebietId, name));
-  ipcMain.handle('get-kvz-customers', (_e, kvzId) => customerStore.getKvzCustomers(kvzId));
-  ipcMain.handle('import-kvz-excel', async (_e, kvzId) => {
-    const { dialog } = require('electron');
-    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow!, {
-      title: 'Excel / CSV importieren',
-      properties: ['openFile'],
-      filters: [
-        { name: 'Tabellen', extensions: ['xlsx', 'xls', 'csv'] },
-        { name: 'Alle Dateien', extensions: ['*'] }
-      ]
-    });
-    if (canceled || filePaths.length === 0) return { canceled: true };
-    return await customerStore.importKvzCustomersAsync(kvzId, filePaths[0]);
+  ipcMain.handle('generate-kvz-pdf', async (_e, kvzId: string, pmId: string) => {
+    try {
+      const kvz = customerStore.getKVZ(kvzId);
+      if (!kvz) return { success: false, error: 'KVZ nicht gefunden.' };
+      const pm = kvz.popMeasurements?.find(p => p.id === pmId);
+      if (!pm?.sorData) return { success: false, error: 'Für diese Zuleitung liegt keine Messung vor.' };
+
+      const pseudoCustomer: CustomerItem = {
+        id: 0,
+        customerName: `Zuleitung POP ➔ ${kvz.name}`,
+        street: pm.fiberName,
+        city: customerStore.getActiveProject()?.name || '',
+        segment: `POP ➔ ${kvz.name} (${pm.fiberName})`,
+        cableId: pm.fiberName,
+        fiberNumber: 1,
+        orderId: '',
+        status: 'matched',
+        sorFileName: pm.sorFileName,
+        sorFilePath: pm.sorFilePath,
+        sorData: pm.sorData,
+        measuredAt: pm.measuredAt,
+        technicianName: pm.technicianName,
+      };
+
+      const root = customerStore.resolveDeliveryRoot(kvzId);
+      const deliveryDir = root
+        ? path.join(root, safeName(kvz.name), 'Zuleitungen')
+        : path.join(app.getPath('documents'), 'OTDR_Protokolle', 'Zuleitungen', safeName(kvz.name));
+      fs.mkdirSync(deliveryDir, { recursive: true });
+      const targetPath = path.join(deliveryDir, `MTS2000_DIN_Protokoll_POP_${safeName(kvz.name)}_${safeName(pm.fiberName)}.pdf`);
+
+      await PdfExporter.generateSinglePdf(pseudoCustomer, customerStore.getSettings(), targetPath);
+      customerStore.updatePopMeasurement(kvzId, pmId, { pdfPath: targetPath });
+      await shell.openPath(targetPath);
+      return { success: true, pdfPath: targetPath };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
   });
 
   ipcMain.handle('get-customers', async () => {
@@ -179,9 +222,10 @@ app.whenReady().then(() => {
 
   ipcMain.handle('import-customer-file', async () => {
     if (!mainWindow) return { success: false, error: 'No window' };
+    if (!customerStore.getActiveKvzId()) return { success: false, error: NO_KVZ_ERROR };
     const res = await dialog.showOpenDialog(mainWindow, {
       title: 'SharePoint Kundenliste importieren (Excel / CSV)',
-      filters: [{ name: 'Excel / CSV', extensions: ['xlsx', 'xls', 'csv'] }],
+      filters: [{ name: 'Excel / CSV', extensions: ['xlsx', 'csv'] }],
       properties: ['openFile'],
     });
 
@@ -196,6 +240,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle('choose-usb-folder', async () => {
     if (!mainWindow) return { success: false, error: 'No window' };
+    if (!customerStore.getActiveKvzId()) return { success: false, error: NO_KVZ_ERROR };
     const res = await dialog.showOpenDialog(mainWindow, {
       title: 'USB-Stick oder OTDR Messordner auswählen',
       properties: ['openDirectory'],
@@ -204,38 +249,15 @@ app.whenReady().then(() => {
     if (res.canceled || !res.filePaths[0]) {
       return { success: false, canceled: true };
     }
-
-    const folderPath = res.filePaths[0];
-    const scanRes = SorMatcher.scanAndMatch(folderPath, customerStore.getCustomers());
-    archiveRawSorFiles(scanRes.updatedCustomers, scanRes.matchedIds);
-    customerStore.saveCustomers(scanRes.updatedCustomers);
-
-    return {
-      success: true,
-      folderPath,
-      matchedCount: scanRes.matchedCount,
-      matchedIds: scanRes.matchedIds,
-      errors: scanRes.errors,
-      customers: customerStore.getCustomers(),
-    };
+    return scanFolder(res.filePaths[0]);
   });
 
   ipcMain.handle('scan-usb-folder', async (_e, folderPath) => {
+    if (!customerStore.getActiveKvzId()) return { success: false, error: NO_KVZ_ERROR };
     if (!folderPath || !fs.existsSync(folderPath)) {
       return { success: false, error: `Ordner existiert nicht: ${folderPath}` };
     }
-    const scanRes = SorMatcher.scanAndMatch(folderPath, customerStore.getCustomers());
-    archiveRawSorFiles(scanRes.updatedCustomers, scanRes.matchedIds);
-    customerStore.saveCustomers(scanRes.updatedCustomers);
-
-    return {
-      success: true,
-      folderPath,
-      matchedCount: scanRes.matchedCount,
-      matchedIds: scanRes.matchedIds,
-      errors: scanRes.errors,
-      customers: customerStore.getCustomers(),
-    };
+    return scanFolder(folderPath);
   });
 
   ipcMain.handle('get-app-settings', async () => {
@@ -291,20 +313,25 @@ app.whenReady().then(() => {
     return res.filePaths[0];
   });
 
+  ipcMain.handle('render-protocol-html', async (_e, customer: CustomerItem, customSettings) => {
+    try {
+      return { success: true, html: PdfExporter.buildProtocolHtml(customer, customSettings || customerStore.getSettings()) };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
   ipcMain.handle('generate-pdf-protocol', async (_e, customer, customSettings, openAfter = true) => {
     if (!customer.sorData) {
       return { success: false, error: 'Für diesen Kunden liegt noch keine OTDR-Messung vor. Bitte zuerst eine passende .sor-Datei zuordnen (USB-Stick scannen).' };
     }
     try {
       const settings = customSettings || customerStore.getSettings();
-      const nameSafe = (customer.customOverrides?.customerName || customer.customerName).replace(/[^a-zA-Z0-9_-]/g, '_');
-      const fileName = `MTS2000_DIN_Protokoll_Job${String(customer.id).padStart(3, '0')}_${nameSafe}.pdf`;
-      
-      const activeProj = customerStore.getActiveProject();
-      let deliveryDir = path.join(app.getPath('documents'), 'OTDR_Protokolle');
-      if (activeProj?.sharepointPath && fs.existsSync(activeProj.sharepointPath)) {
-        deliveryDir = path.join(activeProj.sharepointPath, String(customer.id), 'Messungen');
-      }
+      const fileName = protocolFileName(customer);
+      const root = customerStore.resolveDeliveryRoot();
+      const deliveryDir = root
+        ? customerFolder(root, customer)
+        : path.join(app.getPath('documents'), 'OTDR_Protokolle');
       fs.mkdirSync(deliveryDir, { recursive: true });
       const targetPath = path.join(deliveryDir, fileName);
 
@@ -337,8 +364,8 @@ app.whenReady().then(() => {
   ipcMain.handle('batch-export-pdfs', async (_e, customerIds: number[], customSettings) => {
     try {
       const settings = customSettings || customerStore.getSettings();
-      const activeProj = customerStore.getActiveProject();
-      const hasSharepoint = !!(activeProj?.sharepointPath && fs.existsSync(activeProj.sharepointPath));
+      const root = customerStore.resolveDeliveryRoot();
+      const hasSharepoint = !!root;
       const timestamp = new Date().toISOString().slice(0, 10);
       const defaultDeliveryDir = path.join(app.getPath('documents'), 'OTDR_Protokolle', `Export_${timestamp}`);
       if (!hasSharepoint) {
@@ -355,11 +382,8 @@ app.whenReady().then(() => {
       const failures: string[] = [];
       for (const cust of targetCustomers) {
         try {
-          const nameSafe = (cust.customOverrides?.customerName || cust.customerName).replace(/[^a-zA-Z0-9_-]/g, '_');
-          const fileName = `MTS2000_DIN_Protokoll_Job${String(cust.id).padStart(3, '0')}_${nameSafe}.pdf`;
-          const targetDir = hasSharepoint
-            ? path.join(activeProj!.sharepointPath!, String(cust.id), 'Messungen')
-            : defaultDeliveryDir;
+          const fileName = protocolFileName(cust);
+          const targetDir = root ? customerFolder(root, cust) : defaultDeliveryDir;
           fs.mkdirSync(targetDir, { recursive: true });
           const targetPath = path.join(targetDir, fileName);
 
@@ -383,7 +407,7 @@ app.whenReady().then(() => {
         }
       }
 
-      const openTarget = hasSharepoint ? activeProj!.sharepointPath! : defaultDeliveryDir;
+      const openTarget = root || defaultDeliveryDir;
       if (exportedCount > 0) await shell.openPath(openTarget);
 
       return { success: exportedCount > 0, count: exportedCount, folderPath: openTarget, error: failures.length > 0 ? failures.join('; ') : undefined };

@@ -1,9 +1,14 @@
 
-export interface Ausbaugebiet {
+export interface LevelInput {
+  name?: string;
+  clusterName?: string;
+  providerName?: string;
+  sharepointPath?: string;
+}
+
+interface LevelBase {
   id: string;
-  projectId: string;
   name: string;
-  popMeasurements?: PopMeasurement[];
   clusterName?: string;
   providerName?: string;
   sharepointPath?: string;
@@ -11,41 +16,28 @@ export interface Ausbaugebiet {
   updatedAt: string;
   totalCustomers?: number;
   matchedCustomers?: number;
+}
+
+export type Project = LevelBase;
+
+export interface Ausbaugebiet extends LevelBase {
+  projectId: string;
 }
 
 export interface PopMeasurement {
   id: string;
   fiberName: string;
+  sorFileName?: string;
   sorFilePath?: string;
-  pdfGenerated?: boolean;
+  sorData?: any;
+  measuredAt?: string;
+  technicianName?: string;
+  pdfPath?: string;
 }
 
-export interface KVZ {
-  id: string;
+export interface KVZ extends LevelBase {
   ausbaugebietId: string;
-  name: string;
   popMeasurements?: PopMeasurement[];
-  clusterName?: string;
-  providerName?: string;
-  sharepointPath?: string;
-  measurements?: any[];
-  createdAt: string;
-  updatedAt: string;
-  totalCustomers?: number;
-  matchedCustomers?: number;
-}
-
-export interface Project {
-  id: string;
-  name: string;
-  popMeasurements?: PopMeasurement[];
-  clusterName?: string;
-  providerName?: string;
-  sharepointPath?: string;
-  createdAt: string;
-  updatedAt: string;
-  totalCustomers?: number;
-  matchedCustomers?: number;
 }
 
 export interface CustomerItem {
@@ -54,7 +46,6 @@ export interface CustomerItem {
   street: string;
   city: string;
   segment?: string;
-  kvzId?: string;
   cableId?: string;
   fiberNumber: number;
   fiberType?: string;
@@ -79,7 +70,6 @@ export interface CustomerItem {
     date?: string;
     time?: string;
     segment?: string;
-  kvzId?: string;
     cableId?: string;
     fiberNumber?: number;
   };

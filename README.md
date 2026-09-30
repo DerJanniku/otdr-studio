@@ -9,10 +9,14 @@ Grenzwerte). Es können beliebig viele Firmenprofile angelegt und gewechselt wer
 
 ## Funktionsumfang
 
-- Kundenliste per SharePoint-Excel oder CSV importieren
+- Gliederung **Projekt → Ausbaugebiet → KVZ → Kunden**, jede Ebene mit eigenem Messfortschritt
+- Kundenliste je KVZ per SharePoint-Excel (`.xlsx`) oder CSV importieren
 - USB-Stick / Messordner mit `.sor`-Dateien einlesen - automatischer Abgleich per Job-ID
-- Live-Vorschau des DIN-Protokolls, Werte pro Kunde manuell nachbearbeiten
-- Einzel- oder Stapel-PDF-Export
+  (Ordner `145/`, `Job_12/`, `12_Musterfrau/` oder Dateiname `12_….sor`)
+- Zuleitungsmessungen POP → KVZ mit eigenem Protokoll
+- Vorschau zeigt exakt das spätere PDF, Werte pro Kunde manuell nachbearbeiten
+- Einzel- oder Stapel-PDF-Export, direkt in den synchronisierten SharePoint-/OneDrive-Ordner
+  (`<Ordner>/<Job-ID>/Messungen/`, ein vorhandener Kundenordner wie `145_Mustermann` wird erkannt)
 - Mehrere Firmenprofile (Presets) zum schnellen Wechseln, z. B. bei mehreren Auftraggebern
 - Helles/dunkles Design, freie Akzentfarbe, eigenes Firmenlogo
 - Prüft beim Start automatisch auf neue Versionen (GitHub Releases)
@@ -20,13 +24,14 @@ Grenzwerte). Es können beliebig viele Firmenprofile angelegt und gewechselt wer
 ## Woher kommen die Daten im Protokoll?
 
 - **Kunden-/Auftragsdaten** (Name, Adresse, Kabel-ID, Segment, Auftrags-Nr., ...) kommen aus der
-  importierten Excel-/CSV-Kundenliste. Eine Beispieldatei mit den erkannten Spaltennamen liegt unter
-  [`src/example-data/Beispiel-Kundenliste.xlsx`](src/example-data/Beispiel-Kundenliste.xlsx) - gut
-  geeignet zum Ausprobieren oder als Vorlage für die eigene Liste.
-- **Messwerte** (Dämpfung, Länge, ORL, Ereignistabelle, Kurve) kommen aus den `.sor`-Dateien beim
-  Scannen des USB-Sticks/Messordners und werden automatisch per Job-ID der Kundenliste zugeordnet.
-- Der einzelne Beispiel-Datensatz, der beim allerersten Start angezeigt wird, ist reine Demo-Anzeige
-  und keiner echten Excel-Datei entnommen.
+  importierten Excel-/CSV-Kundenliste. Erkannt werden u. a. die Spalten `Job-ID`/`Nr.`, `Vorname`,
+  `Nachname`, `Straße`, `PLZ`, `Ort`, `Faser-Nr.`, `Kabel`, `Auftrag` (anpassbar in den Einstellungen).
+- **Messwerte** (Dämpfung, Länge, Ereignistabelle, Kurve) kommen ausschließlich aus den `.sor`-Dateien.
+  Fehlt dort eine Auswertung oder ein Faserende, erzeugt die App **kein** Protokoll, statt Werte zu erfinden.
+- Liegen in einem Job-Ordner mehrere Fasern (`Fiber001`, `Fiber002`), wird die Faser mit der
+  Faser-Nr. aus der Kundenliste verwendet und ein Hinweis angezeigt.
+- Hat das Messgerät keine Uhrzeit gestellt (Datum im Jahr 2000), wird das Einlesedatum verwendet.
+  Das Messdatum lässt sich pro Kunde nachbearbeiten.
 
 ## Installation
 

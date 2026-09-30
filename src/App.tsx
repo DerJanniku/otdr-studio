@@ -1,12 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { CustomerItem, AppSettings, Project, Ausbaugebiet, KVZ } from './types';
 import { CustomerTable } from './components/CustomerTable';
 import { ProtocolPreviewModal } from './components/ProtocolPreviewModal';
 import { SettingsModal } from './components/SettingsModal';
 import { SetupWizard } from './components/SetupWizard';
-import { ProjectDashboard } from './components/ProjectDashboard';
-import { AusbaugebietDashboard } from './components/AusbaugebietDashboard';
-import { KvzDashboard } from './components/KvzDashboard';
+import { LevelDashboard, type LevelLabels } from './components/LevelDashboard';
+import { PopMeasurementsPanel } from './components/PopMeasurementsPanel';
 
 const DEFAULT_SETTINGS: AppSettings = {
   companyName: 'Musterfirma GmbH',
@@ -26,14 +25,49 @@ const DEFAULT_SETTINGS: AppSettings = {
   themeMode: 'dark',
 };
 
+type View = 'projects' | 'ausbaugebiete' | 'kvzs' | 'customers';
+
+const PROJECT_LABELS: LevelLabels = {
+  one: 'Projekt',
+  newOne: 'Neues Projekt',
+  title: 'Projekte',
+  subtitle: 'Wähle ein Projekt. Darunter liegen Ausbaugebiete, KVZs und die Kundenlisten.',
+  namePlaceholder: 'z. B. Musterstadt',
+  clusterLabel: 'Cluster',
+  clusterPlaceholder: 'z. B. Cluster Nord',
+  folderHelp: 'Synchronisierter SharePoint-Ordner des Projekts. Fertige PDFs landen dort unter <Job-ID>/Messungen/. Ein bestehender Kundenordner wie „145_Mustermann“ wird automatisch verwendet.',
+};
+
+const AUSBAUGEBIET_LABELS: LevelLabels = {
+  one: 'Ausbaugebiet',
+  newOne: 'Neues Ausbaugebiet',
+  title: 'Ausbaugebiete',
+  subtitle: 'Wähle ein Ausbaugebiet, um seine KVZs zu sehen.',
+  namePlaceholder: 'z. B. Musterdorf',
+  clusterLabel: 'Beschreibung',
+  clusterPlaceholder: 'z. B. Bauabschnitt 2',
+  folderHelp: 'Nur ausfüllen, wenn dieses Ausbaugebiet einen eigenen SharePoint-Ordner hat. Sonst gilt der Ordner des Projekts.',
+};
+
+const KVZ_LABELS: LevelLabels = {
+  one: 'KVZ',
+  newOne: 'Neuen KVZ',
+  title: 'KVZs',
+  subtitle: 'Wähle einen KVZ, um Kundenliste, Messungen und Protokolle zu bearbeiten.',
+  namePlaceholder: 'z. B. KVZ 1',
+  clusterLabel: 'Beschreibung',
+  clusterPlaceholder: 'z. B. NVt 01 bis 08',
+  folderHelp: 'Nur ausfüllen, wenn dieser KVZ einen eigenen SharePoint-Ordner hat. Sonst gilt der Ordner des Ausbaugebiets bzw. Projekts.',
+};
+
 export function App() {
-  const [view, setView] = useState<'dashboard' | 'ausbaugebiet' | 'kvz' | 'project'>('dashboard');
+  const [view, setView] = useState<View>('projects');
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [ausbaugebiete, setAusbaugebiete] = useState<Ausbaugebiet[]>([]);
   const [activeAusbaugebiet, setActiveAusbaugebiet] = useState<Ausbaugebiet | null>(null);
   const [kvzs, setKvzs] = useState<KVZ[]>([]);
   const [activeKvz, setActiveKvz] = useState<KVZ | null>(null);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [activeProject, setActiveProject] = useState<Project | null>(null);
 
   const [customers, setCustomers] = useState<CustomerItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -44,58 +78,43 @@ export function App() {
   const [loading, setLoading] = useState(false);
   const [isImportingExcel, setIsImportingExcel] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+  const [scanReport, setScanReport] = useState<{ errors: string[]; unmatched: string[] } | null>(null);
   const [updateInfo, setUpdateInfo] = useState<{ latestVersion?: string; url?: string; canSelfUpdate?: boolean } | null>(null);
   const [updateState, setUpdateState] = useState<UpdateState | null>(null);
 
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const viewRef = useRef<View>(view);
+  viewRef.current = view;
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(''), 4500);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToastMessage(''), 4500);
   };
 
   const loadProjects = async () => {
-    if (window.api?.getProjects) {
-      const projs = await window.api.getProjects();
-      setProjects(projs);
-    }
-    if (window.api?.getActiveProject) {
-      const active = await window.api.getActiveProject();
-      setActiveProject(active);
-    }
+    if (window.api?.getProjects) setProjects(await window.api.getProjects());
+    if (window.api?.getActiveProject) setActiveProject(await window.api.getActiveProject());
   };
 
-  
   const loadAusbaugebiete = async (projId: string) => {
-    if (window.api?.getAusbaugebiete) {
-      setAusbaugebiete(await window.api.getAusbaugebiete(projId));
-    }
-  };
-  const loadKvzs = async (agId: string) => {
-    if (window.api?.getKVZs) {
-      setKvzs(await window.api.getKVZs(agId));
-    }
-  };
-  const loadKvzCustomers = async (kId: string) => {
-    if (window.api?.getKvzCustomers) {
-      setCustomers(await window.api.getKvzCustomers(kId));
-    }
+    if (window.api?.getAusbaugebiete) setAusbaugebiete(await window.api.getAusbaugebiete(projId));
   };
 
-  const loadData = async () => {
-    await loadProjects();
-    if (window.api?.getCustomers) {
-      const list = await window.api.getCustomers();
-      setCustomers(list);
-    }
-    if (window.api?.getAppSettings) {
-      const s = await window.api.getAppSettings();
-      if (s) setSettings({ ...DEFAULT_SETTINGS, ...s });
-    }
+  const loadKvzs = async (agId: string) => {
+    if (window.api?.getKVZs) setKvzs(await window.api.getKVZs(agId));
+  };
+
+  const reloadCustomers = async () => {
+    if (window.api?.getCustomers) setCustomers(await window.api.getCustomers());
   };
 
   useEffect(() => {
-    loadData();
+    loadProjects();
+    window.api?.getAppSettings?.().then((s) => {
+      if (s) setSettings({ ...DEFAULT_SETTINGS, ...s });
+    });
 
     window.api?.isFirstRun?.().then((isFirst) => {
       if (isFirst) setShowWizard(true);
@@ -110,12 +129,14 @@ export function App() {
 
     const unsubscribeUpdate = window.api?.onUpdateState?.((state) => setUpdateState(state));
 
+    // The main process only scans a new stick while a KVZ is open.
     const unsubscribeUsb = window.api?.onUsbDetected?.((data) => {
+      if (viewRef.current !== 'customers') return;
       setCustomers(data.customers);
-      loadProjects();
+      reportScan(data.errors, data.unmatched);
       showToast(
         data.matchedCount > 0
-          ? `USB-Stick "${data.volumeName}" erkannt: ${data.matchedCount} OTDR-Messung(en) automatisch zugeordnet.`
+          ? `USB-Stick "${data.volumeName}" erkannt: ${data.matchedCount} Kunden eine OTDR-Messung zugeordnet.`
           : `USB-Stick "${data.volumeName}" erkannt, aber keine passenden Job-IDs gefunden.`
       );
     });
@@ -131,41 +152,75 @@ export function App() {
     document.documentElement.style.setProperty('--color-primary-hover', darkenHex(settings.accentColor, 0.15));
   }, [settings.themeMode, settings.accentColor]);
 
-  const handleSelectProject = async (projectId: string) => {
-    if (!window.api?.setActiveProject) return;
-    setLoading(true);
-    try {
-      const res = await window.api.setActiveProject(projectId);
-      if (res.success) {
-        setCustomers(res.customers);
-        setActiveProject(res.project);
-        setView('project');
-      }
-    } finally {
-      setLoading(false);
+  const reportScan = (errors: string[] = [], unmatched: string[] = []) => {
+    setScanReport(errors.length > 0 || unmatched.length > 0 ? { errors, unmatched } : null);
+  };
+
+  // Navigation
+  const goProjects = async () => {
+    await window.api?.closeKvz?.();
+    setActiveKvz(null);
+    setSelectedCustomer(null);
+    await loadProjects();
+    setView('projects');
+  };
+
+  const openProject = async (id: string) => {
+    const res = await window.api?.setActiveProject?.(id);
+    if (res?.success && res.project) {
+      setActiveProject(res.project);
+      setActiveAusbaugebiet(null);
+      setActiveKvz(null);
+      await loadAusbaugebiete(id);
+      setView('ausbaugebiete');
     }
   };
 
-  const handleCreateProject = async (data: Partial<Project>) => {
-    if (!window.api?.createProject) return;
-    const newProj = await window.api.createProject(data);
-    await loadProjects();
-    await handleSelectProject(newProj.id);
+  const goAusbaugebiete = async () => {
+    if (!activeProject) return goProjects();
+    await window.api?.closeKvz?.();
+    setActiveKvz(null);
+    setSelectedCustomer(null);
+    await loadAusbaugebiete(activeProject.id);
+    setView('ausbaugebiete');
   };
 
-  const handleUpdateProject = async (proj: Project) => {
-    if (!window.api?.updateProject) return;
-    await window.api.updateProject(proj);
-    await loadProjects();
-    if (activeProject?.id === proj.id) {
-      setActiveProject(proj);
+  const openAusbaugebiet = async (id: string) => {
+    const ag = ausbaugebiete.find(a => a.id === id);
+    if (!ag) return;
+    setActiveAusbaugebiet(ag);
+    setActiveKvz(null);
+    await loadKvzs(id);
+    setView('kvzs');
+  };
+
+  const goKvzs = async () => {
+    if (!activeAusbaugebiet) return goAusbaugebiete();
+    await window.api?.closeKvz?.();
+    setActiveKvz(null);
+    setSelectedCustomer(null);
+    await loadKvzs(activeAusbaugebiet.id);
+    setView('kvzs');
+  };
+
+  const openKvz = async (id: string) => {
+    const res = await window.api?.openKvz?.(id);
+    if (!res?.success || !res.kvz) {
+      alert('Der KVZ konnte nicht geöffnet werden.');
+      return;
     }
+    setActiveKvz(res.kvz);
+    setCustomers(res.customers);
+    setSearchQuery('');
+    setFilterStatus('all');
+    setScanReport(null);
+    setView('customers');
   };
 
-  const handleDeleteProject = async (id: string) => {
-    if (!window.api?.deleteProject) return;
-    await window.api.deleteProject(id);
-    await loadProjects();
+  const goBack = () => {
+    if (view === 'customers') return goKvzs();
+    if (view === 'kvzs') return goAusbaugebiete();
+    if (view === 'ausbaugebiete') return goProjects();
   };
 
   const handleWizardFinish = async (newSettings: AppSettings) => {
@@ -191,11 +246,10 @@ export function App() {
       const res = await window.api.importCustomerFile();
       if (res.success && res.customers) {
         setCustomers(res.customers);
-        await loadProjects();
         showToast(
           res.warning
             ? `${res.count} Kunden importiert. Hinweis: ${res.warning}`
-            : `${res.count} Kunden erfolgreich aus SharePoint Excel importiert.`
+            : `${res.count} Kunden erfolgreich importiert.`
         );
       } else if (!res.canceled && res.error) {
         alert(`Fehler beim Import: ${res.error}`);
@@ -215,11 +269,11 @@ export function App() {
       const res = await window.api.chooseUsbFolder();
       if (res.success && res.customers) {
         setCustomers(res.customers);
-        await loadProjects();
+        reportScan(res.errors, res.unmatched);
         if (res.matchedCount && res.matchedCount > 0) {
-          showToast(`${res.matchedCount} OTDR-Messungen (.sor) automatisch den Job-IDs zugeordnet.`);
+          showToast(`${res.matchedCount} Kunden eine OTDR-Messung (.sor) zugeordnet.`);
         } else {
-          showToast(`Keine passenden Job-IDs im ausgewählten Ordner gefunden.`);
+          showToast('Keine passenden Job-IDs im ausgewählten Ordner gefunden.');
         }
       } else if (!res.canceled && res.error) {
         alert(`Fehler beim Scannen: ${res.error}`);
@@ -242,11 +296,12 @@ export function App() {
     setLoading(true);
     try {
       const res = await window.api.batchExportPdfs(readyCustomers.map(c => c.id), settings);
+      await reloadCustomers();
       if (res.success) {
-        showToast(`${res.count} DIN EN 50346 Protokolle erfolgreich exportiert. Zielordner geöffnet.`);
-        await loadData();
+        showToast(`${res.count} DIN EN 50346 Protokolle exportiert. Zielordner geöffnet.`);
+        if (res.error) alert(`Einige Protokolle konnten nicht erstellt werden:\n\n${res.error.split('; ').join('\n\n')}`);
       } else {
-        alert(`Fehler beim Batch-Export: ${res.error}`);
+        alert(`Fehler beim Stapel-Export:\n\n${(res.error || 'unbekannter Fehler').split('; ').join('\n\n')}`);
       }
     } catch (err: any) {
       alert(`Export fehlgeschlagen: ${err.message}`);
@@ -261,9 +316,10 @@ export function App() {
       const res = await window.api.generatePdfProtocol(customer, settings, true);
       if (res.success) {
         showToast(`PDF für ${customer.customOverrides?.customerName || customer.customerName} (Job #${customer.id}) geöffnet.`);
-        await loadData();
+        await reloadCustomers();
+        setSelectedCustomer(prev => (prev && prev.id === customer.id ? { ...prev, status: 'exported' } : prev));
       } else {
-        alert(`Fehler beim Erstellen des PDFs: ${res.error}`);
+        alert(`Fehler beim Erstellen des PDFs:\n${res.error}`);
       }
     } catch (err: any) {
       alert(`PDF-Erstellung fehlgeschlagen: ${err.message}`);
@@ -277,7 +333,7 @@ export function App() {
         alert('Änderungen konnten nicht gespeichert werden (Schreibfehler). Bitte erneut versuchen.');
         return;
       }
-      await loadData();
+      await reloadCustomers();
       setSelectedCustomer(updated);
       showToast('Änderungen gespeichert.');
     }
@@ -310,11 +366,14 @@ export function App() {
     const q = searchQuery.toLowerCase().trim();
     if (!q) return matchesStatus;
 
+    const name = c.customOverrides?.customerName || c.customerName || '';
+    const street = c.customOverrides?.street || c.street || '';
+    const city = c.customOverrides?.city || c.city || '';
     const matchesQuery =
       String(c.id).includes(q) ||
-      c.customerName.toLowerCase().includes(q) ||
-      c.street.toLowerCase().includes(q) ||
-      c.city.toLowerCase().includes(q) ||
+      name.toLowerCase().includes(q) ||
+      street.toLowerCase().includes(q) ||
+      city.toLowerCase().includes(q) ||
       (c.orderId && c.orderId.toLowerCase().includes(q)) ||
       (c.sorFileName && c.sorFileName.toLowerCase().includes(q));
 
@@ -326,43 +385,40 @@ export function App() {
   const exportedCount = customers.filter(c => c.status === 'exported').length;
   const pendingCount = customers.filter(c => c.status === 'pending').length;
 
+  const crumbs: { label: string; onClick?: () => void }[] = [{ label: 'Projekte', onClick: view !== 'projects' ? goProjects : undefined }];
+  if (view !== 'projects' && activeProject) crumbs.push({ label: activeProject.name, onClick: view !== 'ausbaugebiete' ? goAusbaugebiete : undefined });
+  if ((view === 'kvzs' || view === 'customers') && activeAusbaugebiet) crumbs.push({ label: activeAusbaugebiet.name, onClick: view !== 'kvzs' ? goKvzs : undefined });
+  if (view === 'customers' && activeKvz) crumbs.push({ label: activeKvz.name });
+
   return (
     <div style={styles.layout}>
       {/* NAVBAR */}
       <header style={styles.navbar}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', minWidth: 0 }}>
           <div style={styles.brandLogo}>OTDR STUDIO</div>
-          {view === 'project' && (
-            <button
-              style={styles.btnBack}
-              onClick={() => {
-                loadProjects();
-                setView('dashboard');
-              }}
-            >
-              ← Alle Ausbaugebiete
-            </button>
+          {view !== 'projects' && (
+            <button style={styles.btnBack} onClick={goBack}>← Zurück</button>
           )}
-          {view === 'project' && activeProject && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-              <span style={styles.activeProjectBadge}>
-                📍 {activeProject.name}
+          <nav aria-label="Navigationspfad" style={styles.breadcrumbs}>
+            {crumbs.map((c, i) => (
+              <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', minWidth: 0 }}>
+                {i > 0 && <span style={{ color: 'var(--color-text-muted)' }}>›</span>}
+                {c.onClick ? (
+                  <button style={styles.crumbLink} onClick={c.onClick}>{c.label}</button>
+                ) : (
+                  <span style={styles.crumbCurrent}>{c.label}</span>
+                )}
               </span>
-              {activeProject.sharepointPath && (
-                <span style={styles.sharepointBadge} title={activeProject.sharepointPath}>
-                  📂 SharePoint Ingest
-                </span>
-              )}
-            </div>
-          )}
+            ))}
+          </nav>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
           <button style={styles.btnSecondary} onClick={() => setShowWizard(true)}>
             Setup-Assistent
           </button>
-          <button style={styles.btnSecondary} onClick={() => setShowSettings(true)}>
-            Einstellungen &amp; Vorlage
+          <button style={styles.btnSecondary} onClick={() => setShowSettings(true)} title="Einstellungen & Protokoll-Vorlage">
+            ⚙︎ Einstellungen
           </button>
         </div>
       </header>
@@ -416,102 +472,76 @@ export function App() {
       )}
 
       {/* MAIN VIEW CONTENT */}
-      
-      {view === 'dashboard' ? (
-        <ProjectDashboard
-          projects={projects}
-          activeProjectId={activeProject?.id || ''}
-          onSelectProject={async (id) => {
-            const res = await window.api?.setActiveProject?.(id);
-            if (res?.success && res.project) {
-              setActiveProject(res.project);
-              await loadAusbaugebiete(id);
-              setView('ausbaugebiet');
-            }
-          }}
-          onCreateProject={async (data) => {
+      {view === 'projects' ? (
+        <LevelDashboard
+          labels={PROJECT_LABELS}
+          items={projects}
+          activeId={activeProject?.id}
+          keepLast
+          onOpen={openProject}
+          onCreate={async (data) => {
             await window.api?.createProject?.(data);
             await loadProjects();
           }}
-          onUpdateProject={async (p) => {
+          onUpdate={async (p) => {
             await window.api?.updateProject?.(p);
             await loadProjects();
           }}
-          onDeleteProject={async (id) => {
-            await window.api?.deleteProject?.(id);
+          onDelete={async (id) => {
+            const ok = await window.api?.deleteProject?.(id);
+            if (ok === false) alert('Das letzte Projekt kann nicht gelöscht werden.');
             await loadProjects();
           }}
-          onOpenSettings={() => setShowSettings(true)}
           accentColor={settings.accentColor}
         />
-      ) : view === 'ausbaugebiet' && activeProject ? (
-        <AusbaugebietDashboard
-          parentProjectId={activeProject.id}
-          onBack={() => setView('dashboard')}
-          ausbaugebiets={ausbaugebiete}
-          activeAusbaugebietId={activeAusbaugebiet?.id || ''}
-          onSelectAusbaugebiet={async (id) => {
-            const ag = ausbaugebiete.find(a => a.id === id);
-            if (ag) {
-              setActiveAusbaugebiet(ag);
-              await loadKvzs(id);
-              setView('kvz');
-            }
+      ) : view === 'ausbaugebiete' && activeProject ? (
+        <LevelDashboard
+          labels={AUSBAUGEBIET_LABELS}
+          items={ausbaugebiete}
+          activeId={activeAusbaugebiet?.id}
+          onOpen={openAusbaugebiet}
+          onCreate={async (data) => {
+            await window.api?.createAusbaugebiet?.(activeProject.id, data);
+            await loadAusbaugebiete(activeProject.id);
           }}
-          onCreateAusbaugebiet={async (data) => {
-            if (window.api?.createAusbaugebiet) {
-               await window.api.createAusbaugebiet(activeProject.id, data.name || '');
-               await loadAusbaugebiete(activeProject.id);
-            }
+          onUpdate={async (a) => {
+            const saved = await window.api?.updateAusbaugebiet?.(a);
+            if (saved && activeAusbaugebiet?.id === saved.id) setActiveAusbaugebiet(saved);
+            await loadAusbaugebiete(activeProject.id);
           }}
-          onUpdateAusbaugebiet={async (a) => {
-            if(window.api?.updateAusbaugebiet) await window.api.updateAusbaugebiet(a);
-            await loadAusbaugebiete(activeProject!.id);
+          onDelete={async (id) => {
+            await window.api?.deleteAusbaugebiet?.(id);
+            if (activeAusbaugebiet?.id === id) setActiveAusbaugebiet(null);
+            await loadAusbaugebiete(activeProject.id);
           }}
-          onDeleteAusbaugebiet={async (id) => {
-            if(window.api?.deleteAusbaugebiet) await window.api.deleteAusbaugebiet(id);
-            await loadAusbaugebiete(activeProject!.id);
-          }}
-          onOpenSettings={() => setShowSettings(true)}
           accentColor={settings.accentColor}
         />
-      ) : view === 'kvz' && activeAusbaugebiet ? (
-        <KvzDashboard
-          parentAusbaugebietId={activeAusbaugebiet.id}
-          onBack={() => setView('ausbaugebiet')}
-          kvzs={kvzs}
-          activeKVZId={activeKvz?.id || ''}
-          onSelectKVZ={async (id) => {
-            const k = kvzs.find(x => x.id === id);
-            if (k) {
-              setActiveKvz(k);
-              await loadKvzCustomers(id);
-              setView('project');
-            }
+      ) : view === 'kvzs' && activeAusbaugebiet ? (
+        <LevelDashboard
+          labels={KVZ_LABELS}
+          items={kvzs}
+          activeId={activeKvz?.id}
+          onOpen={openKvz}
+          onCreate={async (data) => {
+            await window.api?.createKVZ?.(activeAusbaugebiet.id, data);
+            await loadKvzs(activeAusbaugebiet.id);
           }}
-          onCreateKVZ={async (data) => {
-            if (window.api?.createKVZ) {
-               await window.api.createKVZ(activeAusbaugebiet.id, data.name || '');
-               await loadKvzs(activeAusbaugebiet.id);
-            }
+          onUpdate={async (k) => {
+            await window.api?.updateKVZ?.(k);
+            await loadKvzs(activeAusbaugebiet.id);
           }}
-          onUpdateKVZ={async (k) => {
-            if(window.api?.updateKVZ) await window.api.updateKVZ(k);
-            await loadKvzs(activeAusbaugebiet!.id);
+          onDelete={async (id) => {
+            await window.api?.deleteKVZ?.(id);
+            await loadKvzs(activeAusbaugebiet.id);
           }}
-          onDeleteKVZ={async (id) => {
-            if(window.api?.deleteKVZ) await window.api.deleteKVZ(id);
-            await loadKvzs(activeAusbaugebiet!.id);
-          }}
-          onOpenSettings={() => setShowSettings(true)}
           accentColor={settings.accentColor}
         />
-      ) : (
+      ) : view === 'customers' && activeKvz ? (
         <>
           {/* STATS BANNER */}
           <div style={styles.statsRow}>
             <div style={styles.statCard}>
-              <span style={styles.statTitle}>Kundenliste (SharePoint)</span>
+              <span style={styles.statTitle}>Kunden im KVZ</span>
               <span style={styles.statNum}>{totalCount}</span>
             </div>
             <div style={{ ...styles.statCard, borderColor: 'rgba(34, 197, 94, 0.3)', backgroundColor: 'rgba(34, 197, 94, 0.05)' }}>
@@ -586,6 +616,30 @@ export function App() {
             </div>
           </div>
 
+          {scanReport && (
+            <div style={styles.scanReport} role="status">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <strong>Hinweise zum letzten Scan</strong>
+                <button style={styles.btnUpdateDismiss} onClick={() => setScanReport(null)} aria-label="Hinweise schließen">✕</button>
+              </div>
+              {scanReport.errors.length > 0 && (
+                <ul style={{ margin: '0.35rem 0 0', paddingLeft: '1.1rem' }}>
+                  {scanReport.errors.map((e, i) => <li key={i}>{e}</li>)}
+                </ul>
+              )}
+              {scanReport.unmatched.length > 0 && (
+                <details style={{ marginTop: '0.35rem' }}>
+                  <summary>{scanReport.unmatched.length} .sor-Datei(en) keinem Kunden dieses KVZ zugeordnet</summary>
+                  <ul style={{ margin: '0.35rem 0 0', paddingLeft: '1.1rem', fontFamily: 'var(--font-mono)', fontSize: '0.72rem' }}>
+                    {scanReport.unmatched.map((u, i) => <li key={i}>{u}</li>)}
+                  </ul>
+                </details>
+              )}
+            </div>
+          )}
+
+          <PopMeasurementsPanel kvz={activeKvz} onKvzChanged={setActiveKvz} onToast={showToast} />
+
           {/* TABLE CONTAINER */}
           <main style={styles.mainContent}>
             <CustomerTable 
@@ -595,7 +649,7 @@ export function App() {
             />
           </main>
         </>
-      )}
+      ) : null}
 
       {/* PREVIEW & EDIT MODAL */}
       {selectedCustomer && (
@@ -675,6 +729,43 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'inline-flex',
     alignItems: 'center',
     gap: '0.35rem',
+  },
+  breadcrumbs: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.4rem',
+    fontSize: '0.8rem',
+    minWidth: 0,
+    overflow: 'hidden',
+    whiteSpace: 'nowrap',
+  },
+  crumbLink: {
+    background: 'none',
+    border: 'none',
+    padding: 0,
+    color: 'var(--color-text-secondary)',
+    fontSize: '0.8rem',
+    fontWeight: 600,
+    cursor: 'pointer',
+    textDecoration: 'underline',
+    textUnderlineOffset: '3px',
+  },
+  crumbCurrent: {
+    color: 'var(--color-text-primary)',
+    fontWeight: 700,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  scanReport: {
+    margin: '0 1.5rem 0.8rem 1.5rem',
+    padding: '0.55rem 1rem',
+    backgroundColor: 'rgba(234, 179, 8, 0.08)',
+    border: '1px solid rgba(234, 179, 8, 0.4)',
+    color: 'var(--color-text-primary)',
+    borderRadius: '4px',
+    fontSize: '0.78rem',
+    maxHeight: '160px',
+    overflowY: 'auto',
   },
   activeProjectBadge: {
     backgroundColor: 'var(--color-bg-secondary)',

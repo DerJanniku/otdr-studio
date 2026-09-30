@@ -14,7 +14,50 @@ export interface Project {
   updatedAt: string;
   totalCustomers?: number;
   matchedCustomers?: number;
+  legacyMigrated?: boolean;
 }
+
+export interface Ausbaugebiet {
+  id: string;
+  projectId: string;
+  name: string;
+  clusterName?: string;
+  providerName?: string;
+  sharepointPath?: string;
+  createdAt: string;
+  updatedAt: string;
+  totalCustomers?: number;
+  matchedCustomers?: number;
+}
+
+export interface PopMeasurement {
+  id: string;
+  fiberName: string;
+  sorFileName?: string;
+  sorFilePath?: string;
+  sorData?: any;
+  measuredAt?: string;
+  technicianName?: string;
+  pdfPath?: string;
+}
+
+export interface KVZ {
+  id: string;
+  ausbaugebietId: string;
+  name: string;
+  clusterName?: string;
+  providerName?: string;
+  sharepointPath?: string;
+  popMeasurements?: PopMeasurement[];
+  createdAt: string;
+  updatedAt: string;
+  totalCustomers?: number;
+  matchedCustomers?: number;
+}
+
+type LevelInput = { name?: string; clusterName?: string; providerName?: string; sharepointPath?: string };
+
+const LEGACY_DEMO_NOTE = 'Beispiel-Datensatz (Demo)';
 
 export interface CustomerItem {
   id: number;
@@ -116,8 +159,11 @@ export class CustomerStore {
   private presetsPath: string;
   private projectsPath: string;
   private activeProjectPath: string;
+  private ausbaugebietePath: string;
+  private kvzsPath: string;
   private projects: Project[] = [];
   private activeProjectId: string = 'default';
+  private activeKvzId: string | null = null;
   private customers: CustomerItem[] = [];
   private settings: AppSettings;
   private presets: SettingsPreset[] = [];
@@ -130,12 +176,14 @@ export class CustomerStore {
     this.presetsPath = path.join(this.userDir, 'settings_presets.json');
     this.projectsPath = path.join(this.userDir, 'projects.json');
     this.activeProjectPath = path.join(this.userDir, 'active_project.txt');
+    this.ausbaugebietePath = path.join(this.userDir, 'ausbaugebiete.json');
+    this.kvzsPath = path.join(this.userDir, 'kvzs.json');
 
     this.isFirstRun = !fs.existsSync(this.settingsPath);
     this.settings = this.loadSettings();
     this.presets = this.loadPresets();
     this.initProjects();
-    this.customers = this.loadCustomersForProject(this.activeProjectId);
+    this.migrateLegacyProjectCustomers();
   }
 
   private initProjects() {
@@ -188,133 +236,252 @@ export class CustomerStore {
     }
   }
 
-  private getCustomersPath(projectId: string): string {
-    return path.join(this.userDir, `customers_${projectId}.json`);
+  private getCustomersPath(scopeId: string): string {
+    return path.join(this.userDir, `customers_${scopeId}.json`);
+  }
+
+  private readJsonArray<T>(filePath: string): T[] {
+    if (!fs.existsSync(filePath)) return [];
+    try {
+      const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      console.error(`Failed to parse ${path.basename(filePath)}:`, e);
+      return [];
+    }
+  }
+
+  // Write to a temp file first so a crash mid-write never leaves a truncated JSON behind.
+  private writeJson(filePath: string, data: unknown): boolean {
+    try {
+      const tmp = `${filePath}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
+      fs.renameSync(tmp, filePath);
+      return true;
+    } catch (e) {
+      console.error(`Failed to write ${path.basename(filePath)}:`, e);
+      return false;
+    }
   }
 
   private saveProjectsToDisk() {
-    try {
-      fs.writeFileSync(this.projectsPath, JSON.stringify(this.projects, null, 2), 'utf-8');
-    } catch (e) {
-      console.error('Failed to save projects.json:', e);
+    this.writeJson(this.projectsPath, this.projects);
+  }
+
+  private newId(prefix: string): string {
+    return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  }
+
+  private static cleanLevelInput(data: LevelInput) {
+    return {
+      clusterName: data.clusterName?.trim() || '',
+      providerName: data.providerName?.trim() || '',
+      sharepointPath: data.sharepointPath?.trim() || '',
+    };
+  }
+
+  private static countCustomers(custs: CustomerItem[]) {
+    return {
+      totalCustomers: custs.length,
+      matchedCustomers: custs.filter(c => c.status === 'matched' || c.status === 'exported').length,
+    };
+  }
+
+  // Before 1.4 customers lived directly on the project. The drill-down UI only shows customers
+  // inside a KVZ, so such lists are copied into a "Bestand" area/KVZ once. The original file stays.
+  private migrateLegacyProjectCustomers() {
+    let changed = false;
+    for (const proj of this.projects) {
+      if (proj.legacyMigrated) continue;
+      const legacy = this.readJsonArray<CustomerItem>(this.getCustomersPath(proj.id))
+        .filter(c => c.notes !== LEGACY_DEMO_NOTE);
+      if (legacy.length > 0) {
+        const ag = this.createAusbaugebiet(proj.id, { name: 'Bestand (vor Version 1.4)' });
+        const kvz = this.createKVZ(ag.id, { name: 'Kundenliste aus Projekt' });
+        this.writeJson(this.getCustomersPath(kvz.id), legacy);
+      }
+      proj.legacyMigrated = true;
+      changed = true;
     }
+    if (changed) this.saveProjectsToDisk();
   }
 
   public getProjects(): Project[] {
+    const ags = this.readJsonArray<Ausbaugebiet>(this.ausbaugebietePath);
+    const kvzs = this.readJsonArray<KVZ>(this.kvzsPath);
     return this.projects.map(p => {
-      const custs = this.loadCustomersForProject(p.id);
-      const matched = custs.filter(c => c.status === 'matched' || c.status === 'exported').length;
-      return {
-        ...p,
-        totalCustomers: custs.length,
-        matchedCustomers: matched,
-      };
+      const agIds = new Set(ags.filter(a => a.projectId === p.id).map(a => a.id));
+      const custs = kvzs.filter(k => agIds.has(k.ausbaugebietId)).flatMap(k => this.getKvzCustomers(k.id));
+      return { ...p, ...CustomerStore.countCustomers(custs) };
     });
   }
 
-  
-  
-  public updateAusbaugebiet(a: any): any {
-    const p = path.join(this.userDir, 'ausbaugebiete.json');
-    if (!fs.existsSync(p)) return;
-    let data = JSON.parse(fs.readFileSync(p, 'utf-8'));
-    data = data.map((x:any) => x.id === a.id ? { ...x, ...a } : x);
-    fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf-8');
-  }
-  public deleteAusbaugebiet(id: string): any {
-    const p = path.join(this.userDir, 'ausbaugebiete.json');
-    if (!fs.existsSync(p)) return;
-    let data = JSON.parse(fs.readFileSync(p, 'utf-8'));
-    data = data.filter((x:any) => x.id !== id);
-    fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf-8');
-  }
-  public updateKVZ(k: any): any {
-    const p = path.join(this.userDir, 'kvzs.json');
-    if (!fs.existsSync(p)) return;
-    let data = JSON.parse(fs.readFileSync(p, 'utf-8'));
-    data = data.map((x:any) => x.id === k.id ? { ...x, ...k } : x);
-    fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf-8');
-  }
-  public deleteKVZ(id: string): any {
-    const p = path.join(this.userDir, 'kvzs.json');
-    if (!fs.existsSync(p)) return;
-    let data = JSON.parse(fs.readFileSync(p, 'utf-8'));
-    data = data.filter((x:any) => x.id !== id);
-    fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf-8');
+  public getAusbaugebiete(projectId: string): Ausbaugebiet[] {
+    const kvzs = this.readJsonArray<KVZ>(this.kvzsPath);
+    return this.readJsonArray<Ausbaugebiet>(this.ausbaugebietePath)
+      .filter(a => a.projectId === projectId)
+      .map(a => {
+        const custs = kvzs.filter(k => k.ausbaugebietId === a.id).flatMap(k => this.getKvzCustomers(k.id));
+        return { ...a, ...CustomerStore.countCustomers(custs) };
+      });
   }
 
-  public getAusbaugebiete(projectId: string): any[] {
-    const p = path.join(this.userDir, 'ausbaugebiete.json');
-    if (!fs.existsSync(p)) return [];
-    try {
-      const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
-      return data.filter((a: any) => a.projectId === projectId);
-    } catch { return []; }
-  }
-
-  public createAusbaugebiet(projectId: string, name: string): any {
-    const p = path.join(this.userDir, 'ausbaugebiete.json');
-    let data: any[] = [];
-    if (fs.existsSync(p)) {
-      try { data = JSON.parse(fs.readFileSync(p, 'utf-8')); } catch {}
-    }
-    const a = { id: 'ag_' + Date.now(), projectId, name, createdAt: new Date().toISOString() };
-    data.push(a);
-    fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf-8');
+  public createAusbaugebiet(projectId: string, data: LevelInput): Ausbaugebiet {
+    const all = this.readJsonArray<Ausbaugebiet>(this.ausbaugebietePath);
+    const now = new Date().toISOString();
+    const a: Ausbaugebiet = {
+      id: this.newId('ag'),
+      projectId,
+      name: data.name?.trim() || 'Neues Ausbaugebiet',
+      ...CustomerStore.cleanLevelInput(data),
+      createdAt: now,
+      updatedAt: now,
+    };
+    all.push(a);
+    this.writeJson(this.ausbaugebietePath, all);
     return a;
   }
 
-  public getKVZs(ausbaugebietId: string): any[] {
-    const p = path.join(this.userDir, 'kvzs.json');
-    if (!fs.existsSync(p)) return [];
-    try {
-      const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
-      return data.filter((k: any) => k.ausbaugebietId === ausbaugebietId);
-    } catch { return []; }
+  public updateAusbaugebiet(updated: Ausbaugebiet): Ausbaugebiet | null {
+    const all = this.readJsonArray<Ausbaugebiet>(this.ausbaugebietePath);
+    const idx = all.findIndex(a => a.id === updated.id);
+    if (idx === -1) return null;
+    all[idx] = {
+      ...all[idx],
+      name: updated.name?.trim() || all[idx].name,
+      ...CustomerStore.cleanLevelInput(updated),
+      updatedAt: new Date().toISOString(),
+    };
+    this.writeJson(this.ausbaugebietePath, all);
+    return all[idx];
   }
 
-  public createKVZ(ausbaugebietId: string, name: string): any {
-    const p = path.join(this.userDir, 'kvzs.json');
-    let data: any[] = [];
-    if (fs.existsSync(p)) {
-      try { data = JSON.parse(fs.readFileSync(p, 'utf-8')); } catch {}
-    }
-    const k = { id: 'kvz_' + Date.now(), ausbaugebietId, name, measurements: [], createdAt: new Date().toISOString() };
-    data.push(k);
-    fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf-8');
+  public deleteAusbaugebiet(id: string): boolean {
+    const all = this.readJsonArray<Ausbaugebiet>(this.ausbaugebietePath);
+    if (!all.some(a => a.id === id)) return false;
+    for (const k of this.getKVZs(id)) this.deleteKVZ(k.id);
+    return this.writeJson(this.ausbaugebietePath, all.filter(a => a.id !== id));
+  }
+
+  public getKVZs(ausbaugebietId: string): KVZ[] {
+    return this.readJsonArray<KVZ>(this.kvzsPath)
+      .filter(k => k.ausbaugebietId === ausbaugebietId)
+      .map(k => ({ ...k, ...CustomerStore.countCustomers(this.getKvzCustomers(k.id)) }));
+  }
+
+  public getKVZ(kvzId: string): KVZ | null {
+    return this.readJsonArray<KVZ>(this.kvzsPath).find(k => k.id === kvzId) || null;
+  }
+
+  public createKVZ(ausbaugebietId: string, data: LevelInput): KVZ {
+    const all = this.readJsonArray<KVZ>(this.kvzsPath);
+    const now = new Date().toISOString();
+    const k: KVZ = {
+      id: this.newId('kvz'),
+      ausbaugebietId,
+      name: data.name?.trim() || 'Neuer KVZ',
+      ...CustomerStore.cleanLevelInput(data),
+      popMeasurements: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    all.push(k);
+    this.writeJson(this.kvzsPath, all);
     return k;
   }
 
-  public getKvzCustomers(kvzId: string): any[] {
-    const p = path.join(this.userDir, `customers_${kvzId}.json`);
-    if (!fs.existsSync(p)) return [];
-    try { return JSON.parse(fs.readFileSync(p, 'utf-8')); } catch { return []; }
+  public updateKVZ(updated: KVZ): KVZ | null {
+    const all = this.readJsonArray<KVZ>(this.kvzsPath);
+    const idx = all.findIndex(k => k.id === updated.id);
+    if (idx === -1) return null;
+    all[idx] = {
+      ...all[idx],
+      name: updated.name?.trim() || all[idx].name,
+      ...CustomerStore.cleanLevelInput(updated),
+      updatedAt: new Date().toISOString(),
+    };
+    this.writeJson(this.kvzsPath, all);
+    return all[idx];
   }
 
-  public importKvzCustomers(kvzId: string, filePath: string): any {
-    const oldId = this.activeProjectId;
-    this.activeProjectId = kvzId;
-    let res: any = { success: false, error: 'Not implemented' } as any;
-    try {
-      // It is asynchronous? No, importFromExcel is async, but wait, the store method was async?
-      // Yes, importFromExcel is async.
-      // We will make importKvzCustomers async!
-    } finally {
-      this.activeProjectId = oldId;
-    }
-    return res;
+  private patchKVZ(kvzId: string, patch: (k: KVZ) => void): KVZ | null {
+    const all = this.readJsonArray<KVZ>(this.kvzsPath);
+    const k = all.find(x => x.id === kvzId);
+    if (!k) return null;
+    patch(k);
+    k.updatedAt = new Date().toISOString();
+    return this.writeJson(this.kvzsPath, all) ? k : null;
   }
 
-  public async importKvzCustomersAsync(kvzId: string, filePath: string): Promise<any> {
-    const oldId = this.activeProjectId;
-    this.activeProjectId = kvzId;
-    let res: any = { success: false, error: 'Not implemented' };
-    try {
-      res = await this.importFromExcel(filePath);
-    } finally {
-      this.activeProjectId = oldId;
+  public deleteKVZ(id: string): boolean {
+    const all = this.readJsonArray<KVZ>(this.kvzsPath);
+    if (!all.some(k => k.id === id)) return false;
+    const cPath = this.getCustomersPath(id);
+    if (fs.existsSync(cPath)) {
+      try { fs.unlinkSync(cPath); } catch {}
     }
-    return res;
+    if (this.activeKvzId === id) {
+      this.activeKvzId = null;
+      this.customers = [];
+    }
+    return this.writeJson(this.kvzsPath, all.filter(k => k.id !== id));
+  }
+
+  public getKvzCustomers(kvzId: string): CustomerItem[] {
+    return this.readJsonArray<CustomerItem>(this.getCustomersPath(kvzId));
+  }
+
+  // All customer operations (import, USB scan, PDF export, edits) act on the opened KVZ.
+  public openKvz(kvzId: string): { success: boolean; customers: CustomerItem[]; kvz: KVZ | null } {
+    const kvz = this.getKVZ(kvzId);
+    if (!kvz) return { success: false, customers: [], kvz: null };
+    this.activeKvzId = kvzId;
+    this.customers = this.getKvzCustomers(kvzId);
+    return { success: true, customers: this.customers, kvz };
+  }
+
+  public closeKvz() {
+    this.activeKvzId = null;
+    this.customers = [];
+  }
+
+  public getActiveKvzId(): string | null {
+    return this.activeKvzId;
+  }
+
+  public addPopMeasurement(kvzId: string, pm: PopMeasurement): KVZ | null {
+    return this.patchKVZ(kvzId, k => {
+      k.popMeasurements = [...(k.popMeasurements || []), pm];
+    });
+  }
+
+  public updatePopMeasurement(kvzId: string, pmId: string, patch: Partial<PopMeasurement>): KVZ | null {
+    return this.patchKVZ(kvzId, k => {
+      k.popMeasurements = (k.popMeasurements || []).map(p => (p.id === pmId ? { ...p, ...patch, id: p.id } : p));
+    });
+  }
+
+  public deletePopMeasurement(kvzId: string, pmId: string): KVZ | null {
+    return this.patchKVZ(kvzId, k => {
+      k.popMeasurements = (k.popMeasurements || []).filter(p => p.id !== pmId);
+    });
+  }
+
+  // Delivery folder: the closest SharePoint folder set on KVZ, Ausbaugebiet or project that exists.
+  public resolveDeliveryRoot(kvzId: string | null = this.activeKvzId): string | null {
+    const candidates: (string | undefined)[] = [];
+    const kvz = kvzId ? this.getKVZ(kvzId) : null;
+    if (kvz) {
+      candidates.push(kvz.sharepointPath);
+      const ag = this.readJsonArray<Ausbaugebiet>(this.ausbaugebietePath).find(a => a.id === kvz.ausbaugebietId);
+      if (ag) {
+        candidates.push(ag.sharepointPath);
+        candidates.push(this.projects.find(p => p.id === ag.projectId)?.sharepointPath);
+      }
+    } else {
+      candidates.push(this.getActiveProject()?.sharepointPath);
+    }
+    return candidates.find(c => !!c && fs.existsSync(c)) || null;
   }
 
   public getActiveProjectId(): string {
@@ -332,45 +499,45 @@ export class CustomerStore {
     try {
       fs.writeFileSync(this.activeProjectPath, id, 'utf-8');
     } catch {}
-    this.customers = this.loadCustomersForProject(id);
+    this.closeKvz();
     return { success: true, customers: this.customers, project: proj };
   }
 
   public createProject(data: Partial<Project>): Project {
-    const id = 'proj_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     const now = new Date().toISOString();
     const newProj: Project = {
-      id,
-      name: data.name?.trim() || 'Neues Ausbaugebiet',
-      clusterName: data.clusterName?.trim() || data.name?.trim() || '',
-      providerName: data.providerName?.trim() || this.settings.providerName || '',
+      id: this.newId('proj'),
+      name: data.name?.trim() || 'Neues Projekt',
+      clusterName: data.clusterName?.trim() || '',
+      providerName: data.providerName?.trim() || '',
       sharepointPath: data.sharepointPath?.trim() || '',
       createdAt: now,
       updatedAt: now,
+      legacyMigrated: true,
     };
     this.projects.push(newProj);
     this.saveProjectsToDisk();
-    this.saveCustomersForProject(id, []);
     return newProj;
   }
 
-  public updateProject(updated: Project): Project {
+  public updateProject(updated: Project): Project | null {
     const idx = this.projects.findIndex(p => p.id === updated.id);
-    if (idx !== -1) {
-      this.projects[idx] = { ...updated, updatedAt: new Date().toISOString() };
-      this.saveProjectsToDisk();
-    }
-    return updated;
+    if (idx === -1) return null;
+    this.projects[idx] = {
+      ...this.projects[idx],
+      name: updated.name?.trim() || this.projects[idx].name,
+      ...CustomerStore.cleanLevelInput(updated),
+      updatedAt: new Date().toISOString(),
+    };
+    this.saveProjectsToDisk();
+    return this.projects[idx];
   }
 
   public deleteProject(id: string): boolean {
-    if (this.projects.length <= 1) return false;
+    if (this.projects.length <= 1 || !this.projects.some(p => p.id === id)) return false;
+    for (const a of this.getAusbaugebiete(id)) this.deleteAusbaugebiet(a.id);
     this.projects = this.projects.filter(p => p.id !== id);
     this.saveProjectsToDisk();
-    const cPath = this.getCustomersPath(id);
-    if (fs.existsSync(cPath)) {
-      try { fs.unlinkSync(cPath); } catch {}
-    }
     if (this.activeProjectId === id) {
       this.setActiveProject(this.projects[0].id);
     }
@@ -466,44 +633,10 @@ export class CustomerStore {
     return this.presets;
   }
 
-  private loadCustomersForProject(projectId: string): CustomerItem[] {
-    const cPath = this.getCustomersPath(projectId);
-    if (fs.existsSync(cPath)) {
-      try {
-        const raw = fs.readFileSync(cPath, 'utf-8');
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length === 350 && parsed[349]?.customerName?.includes('Zimmermann')) {
-          const cleanInit = this.getDefaultInitialCustomers();
-          this.saveCustomersForProject(projectId, cleanInit);
-          return cleanInit;
-        }
-        if (Array.isArray(parsed)) return parsed;
-      } catch (e) {
-        console.error(`Failed to parse customers for project ${projectId}:`, e);
-      }
-    }
-    if (projectId === 'default') {
-      const def = this.getDefaultInitialCustomers();
-      this.saveCustomersForProject(projectId, def);
-      return def;
-    }
-    return [];
-  }
-
-  private saveCustomersForProject(projectId: string, customers: CustomerItem[]): boolean {
-    const cPath = this.getCustomersPath(projectId);
-    try {
-      fs.writeFileSync(cPath, JSON.stringify(customers, null, 2), 'utf-8');
-      return true;
-    } catch (e) {
-      console.error(`Failed to save customers for project ${projectId}:`, e);
-      return false;
-    }
-  }
-
   public saveCustomers(customers: CustomerItem[]): boolean {
+    if (!this.activeKvzId) return false;
     this.customers = customers;
-    return this.saveCustomersForProject(this.activeProjectId, customers);
+    return this.writeJson(this.getCustomersPath(this.activeKvzId), customers);
   }
 
   public getCustomers(): CustomerItem[] {
@@ -515,47 +648,6 @@ export class CustomerStore {
     if (idx === -1) return false;
     this.customers[idx] = updated;
     return this.saveCustomers(this.customers);
-  }
-
-  public getDefaultInitialCustomers(): CustomerItem[] {
-    const demoSorData = {
-      wavelength: '1310.0 nm',
-      pulseWidth: '10 ns',
-      refractiveIndex: '1.4675',
-      backscatter: '-79.00 dB',
-      resolution: 0.32,
-      lengthMeters: 7974.1,
-      totalLossDb: 2.655,
-      avgLossDbPerKm: 0.333,
-      orlDb: 54.2,
-      events: [
-        { nr: 1, distance: 0.501, loss: 0.047, reflectance: -52.71, slope: 0.256, type: 'Steckverbinder (Vorlauf ➔ NVt)', status: 'PASS' },
-        { nr: 2, distance: 8.475, loss: 0.0, reflectance: -33.26, slope: 0.333, type: 'Faserende (HÜP SC/APC)', status: 'PASS' }
-      ],
-      tracePoints: []
-    };
-
-    const fiberInfo = getFiberColorInfo(1);
-
-    const demoCustomer: CustomerItem = {
-      id: 1,
-      customerName: 'Max Mustermann',
-      street: 'Am Stadtpark 14',
-      city: '12345 Musterstadt',
-      segment: 'NVt 01 (KVz-1) ➔ HÜP Mustermann (WE 01)',
-      cableId: 'K-12345-NVT01-HUEP01',
-      fiberNumber: 1,
-      fiberType: 'Singlemode ITU-T G.657.A1 (9/125 µm)',
-      colorCode: fiberInfo.label,
-      orderId: 'AUFTRAG-12345-10001',
-      notes: 'Beispiel-Datensatz (Demo)',
-      status: 'matched',
-      sorFileName: 'Faser_001.sor',
-      sorData: demoSorData,
-      measuredAt: new Date().toISOString(),
-    };
-
-    return [demoCustomer];
   }
 
   private static normalizeHeader(str: string): string {
@@ -736,7 +828,10 @@ export class CustomerStore {
       let imported: CustomerItem[] = [];
       let warning: string | undefined;
 
-      if (ext === '.xlsx' || ext === '.xls') {
+      if (ext === '.xls') {
+        return { success: false, count: 0, error: 'Das alte Excel-Format .xls wird nicht unterstützt. Bitte die Datei in Excel als .xlsx speichern und erneut importieren.' };
+      }
+      if (ext === '.xlsx') {
         const workbook = new ExcelJS.Workbook();
         await workbook.xlsx.readFile(filePath);
         const worksheet = workbook.worksheets[0];
@@ -784,7 +879,7 @@ export class CustomerStore {
           imported.push(CustomerStore.buildCustomer(id, get, existing));
         }
       } else if (ext === '.csv') {
-        const content = fs.readFileSync(filePath, 'utf-8');
+        const content = fs.readFileSync(filePath, 'utf-8').replace(/^\uFEFF/, '');
         const lines = content.split('\n').map(l => l.trim()).filter(Boolean);
         const delimiter = (lines[0]?.match(/;/g)?.length || 0) >= (lines[0]?.match(/,/g)?.length || 0) ? ';' : ',';
         const splitLine = (line: string) => line.split(delimiter).map(p => p.replace(/^["']|["']$/g, '').trim());
@@ -823,7 +918,18 @@ export class CustomerStore {
           warning = `${duplicateCount} doppelte Job-ID(s) in der Liste gefunden - jeweils die letzte Zeile wurde übernommen.${warning ? ' ' + warning : ''}`;
         }
 
-        this.saveCustomers(imported);
+        // Customers that already carry a measurement but are missing from the new list are kept,
+        // otherwise re-importing a filtered or shortened list would silently delete measurements.
+        const importedIds = new Set(imported.map(c => c.id));
+        const keptMeasured = this.customers.filter(c => !importedIds.has(c.id) && c.status !== 'pending');
+        if (keptMeasured.length > 0) {
+          imported = [...imported, ...keptMeasured].sort((a, b) => a.id - b.id);
+          warning = `${keptMeasured.length} bereits gemessene Kunden stehen nicht in der neuen Liste und wurden behalten (Job ${keptMeasured.map(c => '#' + c.id).join(', ')}).${warning ? ' ' + warning : ''}`;
+        }
+
+        if (!this.saveCustomers(imported)) {
+          return { success: false, count: 0, error: 'Kundenliste konnte nicht gespeichert werden (kein KVZ geöffnet oder Schreibfehler).' };
+        }
         return { success: true, count: imported.length, warning };
       } else {
         return { success: false, count: 0, error: 'Keine gültigen Kundendaten gefunden.' };

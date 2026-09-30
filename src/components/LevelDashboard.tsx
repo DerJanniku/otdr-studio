@@ -1,62 +1,74 @@
 import { useState } from 'react';
-import type { KVZ, PopMeasurement } from '../types';
+import type { LevelInput } from '../types';
 
-interface KvzDashboardProps {
-  parentAusbaugebietId: string;
-  onBack: () => void;
-  kvzs: KVZ[];
-  activeKVZId: string;
-  onSelectKVZ: (kvzId: string) => void;
-  onCreateKVZ: (data: Partial<KVZ>) => Promise<void>;
-  onUpdateKVZ: (kvz: KVZ) => Promise<void>;
-  onDeleteKVZ: (kvzId: string) => Promise<void>;
-  onOpenSettings: () => void;
+export interface LevelItem {
+  id: string;
+  name: string;
+  clusterName?: string;
+  providerName?: string;
+  sharepointPath?: string;
+  totalCustomers?: number;
+  matchedCustomers?: number;
+}
+
+export interface LevelLabels {
+  /** Singular, e.g. "Ausbaugebiet" */
+  one: string;
+  /** Accusative with article, e.g. "Neues Ausbaugebiet", "Neuen KVZ" */
+  newOne: string;
+  title: string;
+  subtitle: string;
+  namePlaceholder: string;
+  clusterLabel: string;
+  clusterPlaceholder: string;
+  folderHelp: string;
+}
+
+interface LevelDashboardProps<T extends LevelItem> {
+  labels: LevelLabels;
+  items: T[];
+  activeId?: string;
+  /** The top level (projects) always keeps one entry; lower levels may be emptied. */
+  keepLast?: boolean;
+  onOpen: (id: string) => void;
+  onCreate: (data: LevelInput) => Promise<void>;
+  onUpdate: (item: T) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
   accentColor: string;
 }
 
-export function KvzDashboard({
-  parentAusbaugebietId,
-  onBack,
-  kvzs,
-  activeKVZId,
-  onSelectKVZ,
-  onCreateKVZ,
-  onUpdateKVZ,
-  onDeleteKVZ,
-  onOpenSettings,
+const EMPTY_FORM = { name: '', clusterName: '', providerName: '', sharepointPath: '' };
+
+export function LevelDashboard<T extends LevelItem>({
+  labels,
+  items,
+  activeId,
+  keepLast = false,
+  onOpen,
+  onCreate,
+  onUpdate,
+  onDelete,
   accentColor,
-}: KvzDashboardProps) {
+}: LevelDashboardProps<T>) {
   const [showModal, setShowModal] = useState(false);
-  const [editingKVZ, setEditingKVZ] = useState<KVZ | null>(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    popMeasurements: [] as PopMeasurement[],
-    clusterName: '',
-    providerName: '',
-    sharepointPath: '',
-  });
+  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState<T | null>(null);
+  const [formData, setFormData] = useState(EMPTY_FORM);
 
   const openCreateModal = () => {
-    setEditingKVZ(null);
-    setFormData({
-      name: '',
-    popMeasurements: [] as PopMeasurement[],
-      clusterName: '',
-      providerName: '',
-      sharepointPath: '',
-    });
+    setEditing(null);
+    setFormData(EMPTY_FORM);
     setShowModal(true);
   };
 
-  const openEditModal = (proj: KVZ, e: React.MouseEvent) => {
+  const openEditModal = (item: T, e: React.MouseEvent) => {
     e.stopPropagation();
-    setEditingKVZ(proj);
+    setEditing(item);
     setFormData({
-      name: proj.name,
-      popMeasurements: proj.popMeasurements || [],
-      clusterName: proj.clusterName || '',
-      providerName: proj.providerName || '',
-      sharepointPath: proj.sharepointPath || '',
+      name: item.name,
+      clusterName: item.clusterName || '',
+      providerName: item.providerName || '',
+      sharepointPath: item.sharepointPath || '',
     });
     setShowModal(true);
   };
@@ -64,144 +76,129 @@ export function KvzDashboard({
   const handleChooseFolder = async () => {
     if (!window.api?.chooseDirectory) return;
     const folder = await window.api.chooseDirectory();
-    if (folder) {
-      setFormData(prev => ({ ...prev, sharepointPath: folder }));
-    }
+    if (folder) setFormData(prev => ({ ...prev, sharepointPath: folder }));
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name.trim()) {
-      alert('Bitte einen Namen für das Ausbaugebiet eingeben.');
+    if (saving) return;
+    const data = {
+      name: formData.name.trim(),
+      clusterName: formData.clusterName.trim(),
+      providerName: formData.providerName.trim(),
+      sharepointPath: formData.sharepointPath.trim(),
+    };
+    if (!data.name) {
+      alert(`Bitte einen Namen für ${labels.one === 'KVZ' ? 'den KVZ' : `das ${labels.one}`} eingeben.`);
       return;
     }
-
-    if (editingKVZ) {
-      await onUpdateKVZ({
-        ...editingKVZ,
-        name: formData.name.trim(),
-        clusterName: formData.clusterName.trim(),
-        providerName: formData.providerName.trim(),
-        sharepointPath: formData.sharepointPath.trim(),
-      });
-    } else {
-      await onCreateKVZ({
-        name: formData.name.trim(),
-        clusterName: formData.clusterName.trim(),
-        providerName: formData.providerName.trim(),
-        sharepointPath: formData.sharepointPath.trim(),
-      });
+    setSaving(true);
+    try {
+      if (editing) await onUpdate({ ...editing, ...data });
+      else await onCreate(data);
+      setShowModal(false);
+    } catch (err: any) {
+      alert(`Speichern fehlgeschlagen: ${err?.message || err}`);
+    } finally {
+      setSaving(false);
     }
-    setShowModal(false);
   };
 
-  const handleDelete = async (proj: KVZ, e: React.MouseEvent) => {
+  const handleDelete = async (item: T, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (kvzs.length <= 1) {
-      alert('Das letzte verbleibende Ausbaugebiet kann nicht gelöscht werden.');
-      return;
-    }
-    const ok = window.confirm(`Möchtest du das Ausbaugebiet "${proj.name}" wirklich löschen? Alle zugehörigen Kunden- und Messdaten für dieses Gebiet werden entfernt.`);
-    if (ok) {
-      await onDeleteKVZ(proj.id);
-    }
+    const scope = labels.one === 'Projekt'
+      ? 'alle Ausbaugebiete, KVZs, Kundenlisten und Messzuordnungen dieses Projekts'
+      : labels.one === 'Ausbaugebiet'
+        ? 'alle KVZs, Kundenlisten und Messzuordnungen dieses Ausbaugebiets'
+        : 'die Kundenliste und alle Messzuordnungen dieses KVZ';
+    const ok = window.confirm(`„${item.name}“ wirklich löschen?\n\nDabei werden ${scope} aus OTDR Studio entfernt. Bereits erzeugte PDFs und archivierte .sor-Dateien bleiben erhalten.`);
+    if (ok) await onDelete(item.id);
   };
+
+  const canDelete = !keepLast || items.length > 1;
 
   return (
     <div style={styles.container}>
-      {/* HEADER BAR */}
       <div style={styles.header}>
         <div>
-          <h1 style={styles.title}>Ausbaugebiete &amp; KVZs (NVTs)</h1>
-          <p style={styles.subtitle}>
-            Wähle ein Ausbaugebiet aus, um Messungen zuzuordnen und DIN EN 50346 Protokolle zu erstellen.
-          </p>
+          <h1 style={styles.title}>{labels.title}</h1>
+          <p style={styles.subtitle}>{labels.subtitle}</p>
         </div>
-        <div style={{ display: 'flex', gap: '0.75rem' }}>
-          
-          <button style={{ ...styles.btnPrimary, backgroundColor: accentColor }} onClick={openCreateModal}>
-            + Neues KVZ anlegen
-          </button>
-        </div>
+        <button style={{ ...styles.btnPrimary, backgroundColor: accentColor }} onClick={openCreateModal}>
+          + {labels.newOne} anlegen
+        </button>
       </div>
 
-      {/* GRID OF PROJECTS */}
+      {items.length === 0 && (
+        <div style={styles.emptyState}>
+          <p style={{ margin: 0, fontWeight: 600 }}>Hier gibt es noch keine Einträge.</p>
+          <p style={{ margin: '0.4rem 0 1rem', color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>
+            Lege {labels.one === 'KVZ' ? 'den ersten KVZ' : `das erste ${labels.one}`} an, um weiterzumachen.
+          </p>
+          <button style={{ ...styles.btnPrimary, backgroundColor: accentColor }} onClick={openCreateModal}>
+            + {labels.newOne} anlegen
+          </button>
+        </div>
+      )}
+
       <div style={styles.grid}>
-        {kvzs.map(proj => {
-          const total = proj.totalCustomers || 0;
-          const matched = proj.matchedCustomers || 0;
+        {items.map(item => {
+          const total = item.totalCustomers || 0;
+          const matched = item.matchedCustomers || 0;
           const pct = total > 0 ? Math.round((matched / total) * 100) : 0;
-          const isActive = proj.id === activeKVZId;
+          const isActive = item.id === activeId;
 
           return (
             <div
-              key={proj.id}
+              key={item.id}
               style={{
                 ...styles.card,
                 borderColor: isActive ? accentColor : 'var(--color-border)',
                 boxShadow: isActive ? `0 0 0 1.5px ${accentColor}` : undefined,
               }}
-              onClick={() => onSelectKVZ(proj.id)}
+              onClick={() => onOpen(item.id)}
             >
               <div style={styles.cardHeader}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <h3 style={styles.cardTitle}>{proj.name}</h3>
-                    {isActive && (
-                      <span style={{ ...styles.activeBadge, backgroundColor: accentColor }}>Aktiv</span>
-                    )}
+                    <h3 style={styles.cardTitle}>{item.name}</h3>
+                    {isActive && <span style={{ ...styles.activeBadge, backgroundColor: accentColor }}>Zuletzt geöffnet</span>}
                   </div>
-                  {proj.clusterName && (
-                    <span style={styles.clusterTag}>Cluster: {proj.clusterName}</span>
-                  )}
+                  {item.clusterName && <span style={styles.clusterTag}>{labels.clusterLabel}: {item.clusterName}</span>}
                 </div>
                 <div style={styles.actionIcons} onClick={e => e.stopPropagation()}>
-                  <button
-                    style={styles.iconBtn}
-                    onClick={e => openEditModal(proj, e)}
-                    title="Gebiet bearbeiten"
-                  >
+                  <button style={styles.iconBtn} onClick={e => openEditModal(item, e)} title={`${labels.one} bearbeiten`} aria-label={`${labels.one} bearbeiten`}>
                     ✏️
                   </button>
-                  {kvzs.length > 1 && (
-                    <button
-                      style={{ ...styles.iconBtn, color: '#ef4444' }}
-                      onClick={e => handleDelete(proj, e)}
-                      title="Gebiet löschen"
-                    >
+                  {canDelete && (
+                    <button style={{ ...styles.iconBtn, color: '#ef4444' }} onClick={e => handleDelete(item, e)} title={`${labels.one} löschen`} aria-label={`${labels.one} löschen`}>
                       🗑️
                     </button>
                   )}
                 </div>
               </div>
 
-              {/* DETAILS */}
               <div style={styles.cardBody}>
-                {proj.providerName && (
+                {item.providerName && (
                   <div style={styles.detailRow}>
                     <span style={styles.detailLabel}>Auftraggeber:</span>
-                    <span style={styles.detailValue}>{proj.providerName}</span>
+                    <span style={styles.detailValue}>{item.providerName}</span>
                   </div>
                 )}
                 <div style={styles.detailRow}>
-                  <span style={styles.detailLabel}>SharePoint-Sync:</span>
+                  <span style={styles.detailLabel}>SharePoint-Ordner:</span>
                   <span style={styles.detailValue}>
-                    {proj.sharepointPath ? (
-                      <span style={{ color: '#15803d', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                        ✓ Verknüpft
-                      </span>
+                    {item.sharepointPath ? (
+                      <span style={{ color: '#15803d', fontWeight: 600 }}>✓ Eigener Ordner</span>
                     ) : (
-                      <span style={{ color: 'var(--color-text-muted)' }}>Lokales Standard-Verzeichnis</span>
+                      <span style={{ color: 'var(--color-text-muted)' }}>{labels.one === 'Projekt' ? 'Lokal (Dokumente)' : 'Vom übergeordneten Eintrag'}</span>
                     )}
                   </span>
                 </div>
-                {proj.sharepointPath && (
-                  <div style={styles.pathPreview} title={proj.sharepointPath}>
-                    📂 {proj.sharepointPath}
-                  </div>
+                {item.sharepointPath && (
+                  <div style={styles.pathPreview} title={item.sharepointPath}>📂 {item.sharepointPath}</div>
                 )}
 
-                {/* PROGRESS BAR */}
                 <div style={styles.progressSection}>
                   <div style={styles.progressHeader}>
                     <span style={styles.progressLabel}>Messfortschritt:</span>
@@ -210,24 +207,14 @@ export function KvzDashboard({
                     </span>
                   </div>
                   <div style={styles.progressTrack}>
-                    <div
-                      style={{
-                        ...styles.progressBar,
-                        width: `${pct}%`,
-                        backgroundColor: pct === 100 ? '#15803d' : accentColor,
-                      }}
-                    />
+                    <div style={{ ...styles.progressBar, width: `${pct}%`, backgroundColor: pct === 100 ? '#15803d' : accentColor }} />
                   </div>
                 </div>
               </div>
 
-              {/* CARD FOOTER */}
               <div style={styles.cardFooter}>
-                <button
-                  style={{ ...styles.btnOpen, backgroundColor: accentColor }}
-                  onClick={() => onSelectKVZ(proj.id)}
-                >
-                  Gebiet öffnen &amp; bearbeiten →
+                <button style={{ ...styles.btnOpen, backgroundColor: accentColor }} onClick={e => { e.stopPropagation(); onOpen(item.id); }}>
+                  Öffnen →
                 </button>
               </div>
             </div>
@@ -235,24 +222,24 @@ export function KvzDashboard({
         })}
       </div>
 
-      {/* CREATE / EDIT MODAL */}
       {showModal && (
         <div style={styles.modalOverlay} onClick={() => setShowModal(false)}>
-          <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
+          <div style={styles.modalContent} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
             <div style={styles.modalHeader}>
               <h2 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0 }}>
-                {editingKVZ ? 'Ausbaugebiet bearbeiten' : 'Neues KVZ anlegen'}
+                {editing ? `${labels.one} bearbeiten` : `${labels.newOne} anlegen`}
               </h2>
-              <button style={styles.closeBtn} onClick={() => setShowModal(false)}>✕</button>
+              <button style={styles.closeBtn} onClick={() => setShowModal(false)} aria-label="Schließen">✕</button>
             </div>
 
             <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
               <div>
-                <label style={styles.formLabel}>Name des KVZs *</label>
+                <label style={styles.formLabel}>Name *</label>
                 <input
                   type="text"
                   required
-                  placeholder="z. B. KVZ 1"
+                  autoFocus
+                  placeholder={labels.namePlaceholder}
                   value={formData.name}
                   onChange={e => setFormData({ ...formData, name: e.target.value })}
                   style={styles.formInput}
@@ -261,10 +248,10 @@ export function KvzDashboard({
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                 <div>
-                  <label style={styles.formLabel}>Beschreibung</label>
+                  <label style={styles.formLabel}>{labels.clusterLabel} (optional)</label>
                   <input
                     type="text"
-                    placeholder="z. B. NVt 01 bis 08"
+                    placeholder={labels.clusterPlaceholder}
                     value={formData.clusterName}
                     onChange={e => setFormData({ ...formData, clusterName: e.target.value })}
                     style={styles.formInput}
@@ -274,7 +261,7 @@ export function KvzDashboard({
                   <label style={styles.formLabel}>Auftraggeber (optional)</label>
                   <input
                     type="text"
-                    placeholder="z. B. Deutsche Telekom, Musterbau GmbH"
+                    placeholder="z. B. Deutsche Telekom"
                     value={formData.providerName}
                     onChange={e => setFormData({ ...formData, providerName: e.target.value })}
                     style={styles.formInput}
@@ -282,21 +269,25 @@ export function KvzDashboard({
                 </div>
               </div>
 
-              
+              <div>
+                <label style={styles.formLabel}>SharePoint- / OneDrive-Sync-Ordner (optional)</label>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <input
+                    type="text"
+                    placeholder="Pfad zum lokal synchronisierten SharePoint-Ordner"
+                    value={formData.sharepointPath}
+                    onChange={e => setFormData({ ...formData, sharepointPath: e.target.value })}
+                    style={{ ...styles.formInput, flex: 1, fontFamily: 'var(--font-mono)', fontSize: '0.75rem' }}
+                  />
+                  <button type="button" style={styles.btnSecondary} onClick={handleChooseFolder}>Ordner wählen</button>
+                </div>
+                <span style={styles.formHelp}>{labels.folderHelp}</span>
+              </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
-                <button
-                  type="button"
-                  style={styles.btnSecondary}
-                  onClick={() => setShowModal(false)}
-                >
-                  Abbrechen
-                </button>
-                <button
-                  type="submit"
-                  style={{ ...styles.btnPrimary, backgroundColor: accentColor }}
-                >
-                  {editingKVZ ? 'Änderungen speichern' : 'KVZ anlegen'}
+                <button type="button" style={styles.btnSecondary} onClick={() => setShowModal(false)}>Abbrechen</button>
+                <button type="submit" disabled={saving} style={{ ...styles.btnPrimary, backgroundColor: accentColor, opacity: saving ? 0.6 : 1 }}>
+                  {editing ? 'Änderungen speichern' : `${labels.one} anlegen`}
                 </button>
               </div>
             </form>
@@ -308,6 +299,13 @@ export function KvzDashboard({
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  emptyState: {
+    border: '1px dashed var(--color-border)',
+    borderRadius: '10px',
+    padding: '2rem',
+    textAlign: 'center',
+    marginBottom: '1.25rem',
+  },
   container: {
     padding: '2rem',
     maxWidth: '1280px',

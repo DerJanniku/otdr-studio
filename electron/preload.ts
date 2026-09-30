@@ -4,21 +4,18 @@ contextBridge.exposeInMainWorld('api', {
   getCustomers: () => ipcRenderer.invoke('get-customers'),
 
   getAusbaugebiete: (projectId: string) => ipcRenderer.invoke('get-ausbaugebiete', projectId),
-  
+  createAusbaugebiet: (projectId: string, data: any) => ipcRenderer.invoke('create-ausbaugebiet', projectId, data),
   updateAusbaugebiet: (a: any) => ipcRenderer.invoke('update-ausbaugebiet', a),
   deleteAusbaugebiet: (id: string) => ipcRenderer.invoke('delete-ausbaugebiet', id),
+  getKVZs: (ausbaugebietId: string) => ipcRenderer.invoke('get-kvzs', ausbaugebietId),
+  createKVZ: (ausbaugebietId: string, data: any) => ipcRenderer.invoke('create-kvz', ausbaugebietId, data),
   updateKVZ: (k: any) => ipcRenderer.invoke('update-kvz', k),
   deleteKVZ: (id: string) => ipcRenderer.invoke('delete-kvz', id),
-
-  selectSorFile: () => ipcRenderer.invoke('select-sor-file'),
+  openKvz: (kvzId: string) => ipcRenderer.invoke('open-kvz', kvzId),
+  closeKvz: () => ipcRenderer.invoke('close-kvz'),
+  addPopMeasurement: (kvzId: string, fiberName: string) => ipcRenderer.invoke('add-pop-measurement', kvzId, fiberName),
+  deletePopMeasurement: (kvzId: string, pmId: string) => ipcRenderer.invoke('delete-pop-measurement', kvzId, pmId),
   generateKvzPdf: (kvzId: string, pmId: string) => ipcRenderer.invoke('generate-kvz-pdf', kvzId, pmId),
-
-
-  createAusbaugebiet: (projectId: string, name: string) => ipcRenderer.invoke('create-ausbaugebiet', projectId, name),
-  getKVZs: (ausbaugebietId: string) => ipcRenderer.invoke('get-kvzs', ausbaugebietId),
-  createKVZ: (ausbaugebietId: string, name: string) => ipcRenderer.invoke('create-kvz', ausbaugebietId, name),
-  getKvzCustomers: (kvzId: string) => ipcRenderer.invoke('get-kvz-customers', kvzId),
-  importKvzExcel: (kvzId: string) => ipcRenderer.invoke('import-kvz-excel', kvzId),
 
   saveCustomers: (customers: any[]) => ipcRenderer.invoke('save-customers', customers),
   updateCustomer: (customer: any) => ipcRenderer.invoke('update-customer', customer),
@@ -37,6 +34,7 @@ contextBridge.exposeInMainWorld('api', {
   getActiveProject: () => ipcRenderer.invoke('get-active-project'),
   setActiveProject: (id: string) => ipcRenderer.invoke('set-active-project', id),
   chooseDirectory: () => ipcRenderer.invoke('choose-directory'),
+  renderProtocolHtml: (customer: any, settings?: any) => ipcRenderer.invoke('render-protocol-html', customer, settings),
   generatePdfProtocol: (customer: any, settings?: any, openAfter: boolean = true) => 
     ipcRenderer.invoke('generate-pdf-protocol', customer, settings, openAfter),
   batchExportPdfs: (customerIds?: number[], settings?: any) => 

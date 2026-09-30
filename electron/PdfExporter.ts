@@ -26,10 +26,7 @@ function safeColor(value: unknown, fallback: string): string {
 
 export class PdfExporter {
   public static async generateSinglePdf(customer: CustomerItem, settings: AppSettings, targetPath: string): Promise<string> {
-    if (!customer.sorData) {
-      throw new Error('Keine OTDR-Messung für diesen Kunden vorhanden - PDF kann nicht erstellt werden.');
-    }
-
+    const html = this.buildProtocolHtml(customer, settings);
     const win = new BrowserWindow({
       show: false,
       width: 800,
@@ -37,8 +34,33 @@ export class PdfExporter {
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
+        javascript: false,
       },
     });
+
+    const tempHtmlPath = path.join(app.getPath('temp'), `protocol_${process.pid}_${Date.now()}.html`);
+    try {
+      fs.writeFileSync(tempHtmlPath, html, 'utf8');
+      await win.loadURL(`file://${tempHtmlPath}`);
+      const pdfData = await win.webContents.printToPDF({
+        pageSize: 'A4',
+        margins: { top: 0, bottom: 0, left: 0, right: 0 },
+        printBackground: true,
+      });
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+      fs.writeFileSync(targetPath, pdfData);
+    } finally {
+      try { fs.unlinkSync(tempHtmlPath); } catch {}
+      win.destroy();
+    }
+    return targetPath;
+  }
+
+  // Single source for the protocol: the in-app preview shows exactly this HTML.
+  public static buildProtocolHtml(customer: CustomerItem, settings: AppSettings): string {
+    if (!customer.sorData) {
+      throw new Error('Keine OTDR-Messung für diesen Kunden vorhanden - PDF kann nicht erstellt werden.');
+    }
 
     const overrides = customer.customOverrides || {};
     const effectiveName = esc(overrides.customerName || customer.customerName);
@@ -53,7 +75,10 @@ export class PdfExporter {
 
     const sorData = customer.sorData;
 
-    const docNumber = `PROTO-${new Date().getFullYear()}-JOB${String(customer.id).padStart(4, '0')}`;
+    const isFeeder = customer.id === 0;
+    const docNumber = isFeeder
+      ? `PROTO-${new Date().getFullYear()}-POP-${esc(customer.cableId || '').slice(0, 24)}`
+      : `PROTO-${new Date().getFullYear()}-JOB${String(customer.id).padStart(4, '0')}`;
     const accent = safeColor(settings.accentColor, '#3b82f6');
     const companyNameEsc = esc(settings.companyName);
     const providerNameEsc = esc(settings.providerName);
@@ -121,7 +146,6 @@ export class PdfExporter {
     // Platzhalterwerte gedruckt und trotzdem "BESTANDEN" gestempelt.
     const dq = sorData.dataQuality;
     if (dq && !dq.usable) {
-      win.destroy();
       throw new Error(
         'Aus dieser Messung kann kein Abnahmeprotokoll erstellt werden:\n- ' +
         dq.warnings.join('\n- ') +
@@ -134,7 +158,7 @@ export class PdfExporter {
     const wlNum = parseFloat(String(sorData.wavelength ?? '').replace(/[^0-9.]/g, '')) || 0;
     const wlLabel = wlNum > 0 ? `@${wlNum.toFixed(0)} nm` : '';
     // Wellenlaengenabhaengiger Daempfungsgrenzwert fuer G.652/G.657
-    const limitPerKm = wlNum >= 1500 ? 0.230 : (wlNum >= 1600 ? 0.250 : 0.380);
+    const limitPerKm = wlNum >= 1600 ? 0.250 : (wlNum >= 1500 ? 0.230 : 0.380);
 
     const num = (v: unknown): number | null => (typeof v === 'number' && isFinite(v) ? v : null);
     const fmtVal = (v: unknown, dec: number, unit: string): string => {
@@ -172,9 +196,10 @@ export class PdfExporter {
     const lossBudget = lenM !== null ? (lenM / 1000) * limitPerKm + eventBudget : null;
     const totalLoss = num(sorData.totalLossDb);
     const lossOk = totalLoss !== null && lossBudget !== null && totalLoss <= lossBudget;
-    const perKmOk = perKm !== null && perKm <= limitPerKm;   // nur zur Einfaerbung der Kennzahl
+    // The MTS-2000 does not write an ORL into its files. A missing value is shown as not evaluated
+    // and left out of the verdict; reflections are still checked per event (<= -40 dB).
     const orlOk = orl !== null && orl >= (settings.minOrl ?? 45);
-    const passed = eventsAllPass && lossOk && orlOk;
+    const passed = eventsAllPass && lossOk && (orl === null || orlOk);
     const stampStatus = passed ? 'BESTANDEN' : 'NICHT BESTANDEN';
     const stampColor = passed ? '#15803d' : '#b91c1c';
 
@@ -432,7 +457,7 @@ export class PdfExporter {
     <!-- COL 1: Customer & Segment -->
     <div class="col">
       <div class="card">
-        <div class="card-header">1. Auftrags- &amp; Standortdaten (Job #${customer.id})</div>
+        <div class="card-header">1. Auftrags- &amp; Standortdaten (${isFeeder ? 'Zuleitung POP ➔ KVZ' : `Job #${customer.id}`})</div>
         <table class="data-table">
           ${providerRowHtml}
           <tr><td class="label">Projekt / Cluster:</td><td class="val">${projectClusterEsc}</td></tr>
@@ -478,11 +503,11 @@ export class PdfExporter {
             <td class="label">Streckendämpfung:</td>
             <td class="val" style="color:${lossOk ? '#15803d' : '#b91c1c'};"><strong>${fmtVal(sorData.totalLossDb, 3, 'dB')}</strong>${lossBudget !== null ? ' (Budget ≤ ' + lossBudget.toFixed(3) + ' dB)' : ''}</td>
             <td class="label">Davon pro km:</td>
-            <td class="val" style="color:${perKmOk ? '#15803d' : '#b45309'};">${fmtVal(perKm, 3, 'dB/km')} (Faser-Richtwert ≤ ${limitPerKm.toFixed(3)})</td>
+            <td class="val">${fmtVal(perKm, 3, 'dB/km')} (inkl. Ereignisse, nur informativ)</td>
           </tr>
           <tr>
             <td class="label">Rückflussdämpfung:</td>
-            <td class="val" style="color:${orlOk ? '#15803d' : '#b91c1c'};">${fmtVal(orl, 1, 'dB')} (Soll ≥ ${(settings.minOrl ?? 45).toFixed(1)} dB)</td>
+            <td class="val" style="color:${orl === null ? '#475569' : orlOk ? '#15803d' : '#b91c1c'};">${orl === null ? 'vom Messgerät nicht ausgegeben (Reflexionen je Ereignis geprüft)' : `${orl.toFixed(1)} dB (Soll ≥ ${(settings.minOrl ?? 45).toFixed(1)} dB)`}</td>
             <td class="label">Ereignisse:</td>
             <td class="val">${Array.isArray(sorData.events) ? sorData.events.length : 0} · ${eventsAllPass ? 'alle im Grenzwert' : '<strong style="color:#b91c1c;">Grenzwert überschritten</strong>'}</td>
           </tr>
@@ -632,23 +657,6 @@ export class PdfExporter {
 </html>
     `;
 
-    const tempHtmlPath = path.join(app.getPath('temp'), `protocol_preview_${customer.id}.html`);
-    fs.writeFileSync(tempHtmlPath, html, 'utf8');
-
-    await win.loadURL(`file://${tempHtmlPath}`);
-
-    const pdfData = await win.webContents.printToPDF({
-      pageSize: 'A4',
-      margins: { top: 0, bottom: 0, left: 0, right: 0 },
-      printBackground: true,
-    });
-
-    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-    fs.writeFileSync(targetPath, pdfData);
-
-    try { fs.unlinkSync(tempHtmlPath); } catch {}
-    win.destroy();
-
-    return targetPath;
+    return html;
   }
 }
