@@ -205,7 +205,9 @@ export class PdfExporter {
       return acc + (t.includes('Steck') ? connLimit : spliceLimit);
     }, 0);
     const lossBudget = lenM !== null ? (lenM / 1000) * limitPerKm + eventBudget : null;
-    const totalLoss = num(sorData.totalLossDb);
+    // The device's total loss starts at 0 m and includes the launch fiber; the link under test
+    // starts behind it. The launch fiber share is measured from the trace (see SorMatcher).
+    const totalLoss = num(sorData.linkLossDb) ?? num(sorData.totalLossDb);
     const lossOk = totalLoss !== null && lossBudget !== null && totalLoss <= lossBudget;
     // The MTS-2000 does not write an ORL into its files. A missing value is shown as not evaluated
     // and left out of the verdict; reflections are still checked per event (<= -40 dB).
@@ -428,7 +430,8 @@ export class PdfExporter {
     display: flex;
     align-items: flex-end;
   }
-  .sign-line img { max-height: 30px; max-width: 100%; }
+  .sign-line img { max-height: 30px; max-width: 70%; }
+  .sign-date { margin-left: auto; font-size: 7.5pt; font-weight: 600; color: #0f172a; padding-bottom: 2px; }
   .sign-caption {
     color: #64748b;
     font-size: 5.8pt;
@@ -511,8 +514,8 @@ export class PdfExporter {
             <td class="val">${esc(sorData.wavelength ?? '')} · ${esc(sorData.pulseWidth ?? '')}</td>
           </tr>
           <tr>
-            <td class="label">Streckendämpfung:</td>
-            <td class="val" style="color:${lossOk ? '#15803d' : '#b91c1c'};"><strong>${fmtVal(sorData.totalLossDb, 3, 'dB')}</strong>${lossBudget !== null ? ' (Budget ≤ ' + lossBudget.toFixed(3) + ' dB)' : ''}</td>
+            <td class="label">Streckendämpfung${num(sorData.linkLossDb) !== null ? ' (ohne Vorlauffaser)' : ''}:</td>
+            <td class="val" style="color:${lossOk ? '#15803d' : '#b91c1c'};"><strong>${fmtVal(totalLoss, 3, 'dB')}</strong>${lossBudget !== null ? ' (Budget ≤ ' + lossBudget.toFixed(3) + ' dB)' : ''}${num(sorData.launchLossDb) !== null ? `<br><span style="color:#64748b;font-weight:400;">Gerät gesamt ${fmtVal(sorData.totalLossDb, 3, 'dB')}, davon Vorlauffaser ${fmtVal(sorData.launchLossDb, 3, 'dB')}</span>` : ''}</td>
             <td class="label">Davon pro km:</td>
             <td class="val">${fmtVal(perKm, 3, 'dB/km')} (inkl. Ereignisse, nur informativ)</td>
           </tr>
@@ -648,7 +651,7 @@ export class PdfExporter {
   <div class="sign-grid">
     <div class="sign-col">
       <div><strong>${techTitle}</strong></div>
-      <div class="sign-line">${settings.signatureBase64 ? `<img src="${settings.signatureBase64}" alt="Unterschrift" />` : ''}</div>
+      <div class="sign-line">${settings.signatureBase64 ? `<img src="${settings.signatureBase64}" alt="Unterschrift" />` : ''}<span class="sign-date">${esc(effectiveDate)}</span></div>
       <div class="sign-caption">
         <span>${effectiveTech}</span>
         <span>Ort, Datum, Stempel / Unterschrift</span>

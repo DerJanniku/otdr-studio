@@ -41,7 +41,8 @@ export function CustomerTable({ customers, onSelectCustomer, onGeneratePdf }: Cu
             const city = c.customOverrides?.city || c.city;
             const cableId = c.customOverrides?.cableId || c.cableId || '–';
             const segment = c.customOverrides?.segment || c.segment || '';
-            const loss = c.sorData?.totalLossDb ? `${c.sorData.totalLossDb.toFixed(3)} dB` : '–';
+            const lossDb = c.sorData?.linkLossDb ?? c.sorData?.totalLossDb;
+            const loss = typeof lossDb === 'number' ? `${lossDb.toFixed(3)} dB` : '–';
             const length = c.sorData?.lengthMeters ? `${(c.sorData.lengthMeters).toFixed(0)} m` : '–';
 
             return (

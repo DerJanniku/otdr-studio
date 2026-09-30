@@ -91,7 +91,7 @@ export function PopMeasurementsPanel({ kvz, onKvzChanged, onToast }: PopMeasurem
                   <td style={styles.cell}>
                     {pm.sorData?.lengthMeters ? `${(pm.sorData.lengthMeters / 1000).toFixed(3)} km` : '–'}
                     {' · '}
-                    {typeof pm.sorData?.totalLossDb === 'number' ? `${pm.sorData.totalLossDb.toFixed(2)} dB` : '–'}
+                    {typeof (pm.sorData?.linkLossDb ?? pm.sorData?.totalLossDb) === 'number' ? `${(pm.sorData.linkLossDb ?? pm.sorData.totalLossDb).toFixed(2)} dB` : '–'}
                   </td>
                   <td style={styles.cell}>
                     {usable

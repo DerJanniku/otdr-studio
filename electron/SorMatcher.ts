@@ -115,8 +115,8 @@ export class SorMatcher {
       let macrobendWarning: string | undefined;
       if (secondary) {
         const [low, high] = primary.wl < secondary.wl ? [primary, secondary] : [secondary, primary];
-        const lossLow = low.sor.totalLossDb;
-        const lossHigh = high.sor.totalLossDb;
+        const lossLow = low.sor.linkLossDb ?? low.sor.totalLossDb;
+        const lossHigh = high.sor.linkLossDb ?? high.sor.totalLossDb;
         if (typeof lossLow === 'number' && typeof lossHigh === 'number' && lossHigh - lossLow > 0.5) {
           macrobendWarning = `Verdacht auf Makrobiegung / Faserknick in Kassette: Dämpfung bei ${high.wl.toFixed(0)} nm (${lossHigh.toFixed(2)} dB) ist um ${(lossHigh - lossLow).toFixed(2)} dB höher als bei ${low.wl.toFixed(0)} nm (${lossLow.toFixed(2)} dB).`;
         }
@@ -241,12 +241,33 @@ export class SorMatcher {
       .map((t: any) => t.power as number);
     const zeroRatio = fiberTrace.length > 0 ? fiberTrace.filter((v: number) => v === 0).length / fiberTrace.length : 0;
 
+    // Launch fiber share of the total loss: least-squares slope of the backscatter between the
+    // near-end dead zone and the first event, extrapolated over the launch fiber length.
+    let launchLossDb: number | null = null;
+    if (firstKm >= 0.1) {
+      const pts = trace.filter((t: any) => typeof t?.power === 'number' && t.distance >= 0.05 && t.distance <= firstKm - 0.02);
+      if (pts.length >= 20) {
+        const n = pts.length;
+        const sx = pts.reduce((a: number, t: any) => a + t.distance, 0);
+        const sy = pts.reduce((a: number, t: any) => a + t.power, 0);
+        const sxx = pts.reduce((a: number, t: any) => a + t.distance * t.distance, 0);
+        const sxy = pts.reduce((a: number, t: any) => a + t.distance * t.power, 0);
+        const perKmLaunch = -((n * sxy - sx * sy) / (n * sxx - sx * sx));
+        // Only physically plausible singlemode values are used (0.1 - 0.5 dB/km).
+        if (perKmLaunch >= 0.1 && perKmLaunch <= 0.5) launchLossDb = perKmLaunch * firstKm;
+      }
+    }
+    const linkLossDb = launchLossDb !== null && totalLossDb > 0 ? Math.max(0, totalLossDb - launchLossDb) : null;
+
     const warnings: string[] = [];
     const hasSummary = (summary['total loss'] || 0) > 0 && (summary['loss end'] || 0) > 0;
     if (!hasSummary) warnings.push('Die SOR-Datei enthält keine Auswertung (Summary leer): keine Streckendämpfung, keine Länge.');
     if (events.length < 2) warnings.push('Kein Faserende erkannt - die Messung enthält nur ein Ereignis.');
     else if (endKm - firstKm < 0.005) warnings.push('Faserende liegt direkt am Startereignis - Strecke nicht gemessen.');
     // A measurement against an active (lit) fiber shows up as dropouts inside the fiber section.
+    // An acceptance measurement needs a launch fiber; a first event within a few metres means the
+    // fiber was measured directly at the OTDR port (dead zone and ghost events, loss not assessable).
+    if (events.length >= 2 && firstKm < 0.02) warnings.push(`Keine Vorlauffaser erkannt: erstes Ereignis bei ${(firstKm * 1000).toFixed(0)} m. Bitte mit Vorlauffaser neu messen.`);
     if (zeroRatio > 0.05) warnings.push(`Messkurve unbrauchbar: ${(zeroRatio * 100).toFixed(1)} % der Messpunkte innerhalb der Faser sind 0.`);
 
     return {
@@ -259,7 +280,9 @@ export class SorMatcher {
       totalLossDb: totalLossDb > 0 ? totalLossDb : null,
       // Gesamtdaempfung/Laenge ist die Streckendaempfung pro km (inkl. Ereignisse) - nicht die
       // per LSA bestimmte reine Faserdaempfung. Entsprechend wird sie im Protokoll benannt.
-      avgLossDbPerKm: (lengthMeters > 0 && totalLossDb > 0) ? (totalLossDb / (lengthMeters / 1000)) : null,
+      avgLossDbPerKm: (lengthMeters > 0 && totalLossDb > 0) ? ((linkLossDb ?? totalLossDb) / (lengthMeters / 1000)) : null,
+      launchLossDb,
+      linkLossDb,
       orlDb: summary.ORL > 0 ? summary.ORL : null,
       events,
       tracePoints: downsampledTrace,
