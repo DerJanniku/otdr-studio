@@ -18,7 +18,6 @@ Grenzwerte). Es können beliebig viele Firmenprofile angelegt und gewechselt wer
 - Einzel- oder Stapel-PDF-Export, direkt in den synchronisierten SharePoint-/OneDrive-Ordner:
   das PDF landet im vorhandenen Kundenordner (benannt nach Adresse, z. B. `Musterstraße 1`, oder
   Job-ID), sonst wird dieser angelegt. Die Ordnerebene lässt sich je Projekt, Ausbaugebiet oder KVZ setzen
-- Mehrere gemessene Fasern eines Anschlusses (z. B. zwei Wohneinheiten) ergeben je ein eigenes Protokoll
 - Adresslisten ohne Namensspalte, Hausnummer in eigener Spalte und „Stadt“ + „Ort“ (Ortsteil) werden erkannt
 - Mehrere Firmenprofile (Presets) zum schnellen Wechseln, z. B. bei mehreren Auftraggebern
 - Helles/dunkles Design, freie Akzentfarbe, eigenes Firmenlogo
@@ -31,8 +30,8 @@ Grenzwerte). Es können beliebig viele Firmenprofile angelegt und gewechselt wer
   `Nachname`, `Straße`, `PLZ`, `Ort`, `Faser-Nr.`, `Kabel`, `Auftrag` (anpassbar in den Einstellungen).
 - **Messwerte** (Dämpfung, Länge, Ereignistabelle, Kurve) kommen ausschließlich aus den `.sor`-Dateien.
   Fehlt dort eine Auswertung oder ein Faserende, erzeugt die App **kein** Protokoll, statt Werte zu erfinden.
-- Liegen in einem Job-Ordner mehrere Fasern (`Fiber001`, `Fiber002`), bekommt jede Faser ein eigenes
-  Protokoll. Ohne Faser-Spalte in der Liste gilt die Fasernummer aus der Messdatei.
+- Liegen in einem Job-Ordner mehrere Fasern (`Fiber001`, `Fiber002`), gilt die Faser-Nr. aus der
+  Kundenliste; ohne Faser-Spalte wird die beste Messung verwendet und deren Fasernummer gedruckt.
 - Das Faserende (offener Stecker am HÜP) wird angezeigt, aber nicht bewertet: Ohne Nachlauffaser lässt
   sich der letzte Stecker messtechnisch nicht qualifizieren. Fehlt der ORL-Wert in der Datei, wird er
   als „nicht ausgegeben“ ausgewiesen und nicht erfunden.

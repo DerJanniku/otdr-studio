@@ -59,16 +59,6 @@ type LevelInput = { name?: string; clusterName?: string; providerName?: string; 
 
 const LEGACY_DEMO_NOTE = 'Beispiel-Datensatz (Demo)';
 
-/** A further strand measured for the same connection (e.g. two dwelling units). */
-export interface FiberMeasurement {
-  fiberNumber: number;
-  sorFileName?: string;
-  sorFilePath?: string;
-  sorData?: any;
-  secondarySorData?: any;
-  macrobendWarning?: string;
-}
-
 export interface CustomerItem {
   id: number;
   customerName: string;
@@ -79,7 +69,6 @@ export interface CustomerItem {
   fiberNumber: number;
   /** False when the list has no fiber column - the measured strand number is used instead. */
   fiberNumberFromList?: boolean;
-  additionalFibers?: FiberMeasurement[];
   fiberType?: string;
   colorCode?: string;
   orderId?: string;
@@ -847,7 +836,6 @@ export class CustomerStore {
       cableId: cableId.trim(),
       fiberNumber: existing?.fiberNumberFromList === false && !fiberNrRaw ? existing.fiberNumber : fiberNr,
       fiberNumberFromList: !!fiberNrRaw,
-      additionalFibers: existing?.additionalFibers,
       fiberType: existing?.fiberType || 'Singlemode ITU-T G.657.A1 (9/125 µm)',
       colorCode: fiberInfo.label,
       orderId: orderId.trim(),

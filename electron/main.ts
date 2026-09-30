@@ -11,43 +11,21 @@ import { Updater } from './Updater';
 app.setName('OTDR Studio');
 
 // File/folder names from customer data: keep umlauts, drop characters Windows/SharePoint reject.
-function protocolFileName(customer: CustomerItem, fiberSuffix = false): string {
+function protocolFileName(customer: CustomerItem): string {
   const name = customer.customOverrides?.customerName || customer.customerName;
-  const fiber = fiberSuffix ? `_Faser${customer.customOverrides?.fiberNumber || customer.fiberNumber}` : '';
-  return `MTS2000_DIN_Protokoll_Job${String(customer.id).padStart(3, '0')}_${safeName(name)}${fiber}.pdf`;
+  return `MTS2000_DIN_Protokoll_Job${String(customer.id).padStart(3, '0')}_${safeName(name)}.pdf`;
 }
 
-// One protocol per measured strand: the primary measurement plus every additional fiber.
-function protocolVariants(customer: CustomerItem): CustomerItem[] {
-  const extra = (customer.additionalFibers || []).map(f => ({
-    ...customer,
-    fiberNumber: f.fiberNumber,
-    sorFileName: f.sorFileName,
-    sorFilePath: f.sorFilePath,
-    sorData: f.sorData,
-    secondarySorData: f.secondarySorData,
-    macrobendWarning: f.macrobendWarning,
-    customOverrides: { ...customer.customOverrides, fiberNumber: f.fiberNumber },
-    additionalFibers: undefined,
-  }));
-  return [customer, ...extra];
-}
-
-// Writes the protocol(s) of one customer into its folder and copies the raw .sor next to it.
-async function exportCustomer(customer: CustomerItem, settings: AppSettings, targetDir: string): Promise<string[]> {
-  const variants = protocolVariants(customer);
-  const written: string[] = [];
+// Writes the protocol into the customer's folder and copies the raw .sor next to it.
+async function exportCustomer(customer: CustomerItem, settings: AppSettings, targetDir: string): Promise<string> {
   fs.mkdirSync(targetDir, { recursive: true });
-  for (const v of variants) {
-    const targetPath = path.join(targetDir, protocolFileName(v, variants.length > 1));
-    await PdfExporter.generateSinglePdf(v, settings, targetPath);
-    written.push(targetPath);
-    if (v.sorFilePath && fs.existsSync(v.sorFilePath)) {
-      const rawDest = path.join(targetDir, `Job${String(v.id).padStart(3, '0')}_${path.basename(v.sorFilePath)}`);
-      try { if (!fs.existsSync(rawDest)) fs.copyFileSync(v.sorFilePath, rawDest); } catch {}
-    }
+  const targetPath = path.join(targetDir, protocolFileName(customer));
+  await PdfExporter.generateSinglePdf(customer, settings, targetPath);
+  if (customer.sorFilePath && fs.existsSync(customer.sorFilePath)) {
+    const rawDest = path.join(targetDir, `Job${String(customer.id).padStart(3, '0')}_${path.basename(customer.sorFilePath)}`);
+    try { if (!fs.existsSync(rawDest)) fs.copyFileSync(customer.sorFilePath, rawDest); } catch {}
   }
-  return written;
+  return targetPath;
 }
 
 // Folder names are compared without case, spaces and dashes; macOS/OneDrive may store umlauts
@@ -93,18 +71,15 @@ function archiveRawSorFiles(customers: CustomerItem[], matchedIds: number[]) {
   const archiveRoot = path.join(app.getPath('documents'), 'OTDR_Protokolle', 'Rohdaten');
   for (const id of matchedIds) {
     const customer = customers.find(c => c.id === id);
-    if (!customer) continue;
-    const jobDir = path.join(archiveRoot, `Job_${String(id).padStart(3, '0')}`);
-    for (const m of [customer, ...(customer.additionalFibers || [])]) {
-      if (!m.sorFilePath || !fs.existsSync(m.sorFilePath)) continue;
-      try {
-        fs.mkdirSync(jobDir, { recursive: true });
-        const destPath = path.join(jobDir, path.basename(m.sorFilePath));
-        if (path.resolve(destPath) !== path.resolve(m.sorFilePath)) fs.copyFileSync(m.sorFilePath, destPath);
-        m.sorFilePath = destPath;
-      } catch (err) {
-        console.error(`Failed to archive raw SOR file for job ${id}:`, err);
-      }
+    if (!customer?.sorFilePath || !fs.existsSync(customer.sorFilePath)) continue;
+    try {
+      const jobDir = path.join(archiveRoot, `Job_${String(id).padStart(3, '0')}`);
+      fs.mkdirSync(jobDir, { recursive: true });
+      const destPath = path.join(jobDir, path.basename(customer.sorFilePath));
+      if (path.resolve(destPath) !== path.resolve(customer.sorFilePath)) fs.copyFileSync(customer.sorFilePath, destPath);
+      customer.sorFilePath = destPath;
+    } catch (err) {
+      console.error(`Failed to archive raw SOR file for job ${id}:`, err);
     }
   }
 }
@@ -384,10 +359,10 @@ app.whenReady().then(() => {
     try {
       const root = customerStore.resolveDeliveryRoot();
       const targetDir = root ? customerFolder(root, customer) : path.join(app.getPath('documents'), 'OTDR_Protokolle');
-      const written = await exportCustomer(customer, protocolSettings(customSettings), targetDir);
-      if (openAfter) await shell.openPath(written[0]);
+      const pdfPath = await exportCustomer(customer, protocolSettings(customSettings), targetDir);
+      if (openAfter) await shell.openPath(pdfPath);
       customerStore.updateCustomer({ ...customer, status: 'exported' });
-      return { success: true, pdfPath: written[0], count: written.length };
+      return { success: true, pdfPath };
     } catch (err: any) {
       console.error('Failed to generate PDF protocol:', err);
       return { success: false, error: err.message };
@@ -410,9 +385,9 @@ app.whenReady().then(() => {
       const failures: string[] = [];
       for (const cust of targetCustomers) {
         try {
-          const written = await exportCustomer(cust, settings, root ? customerFolder(root, cust) : defaultDeliveryDir);
+          await exportCustomer(cust, settings, root ? customerFolder(root, cust) : defaultDeliveryDir);
           customerStore.updateCustomer({ ...cust, status: 'exported' });
-          exportedCount += written.length;
+          exportedCount++;
         } catch (custErr: any) {
           console.error(`Failed to export PDF for job ${cust.id}:`, custErr);
           failures.push(`Job #${cust.id}: ${custErr.message}`);

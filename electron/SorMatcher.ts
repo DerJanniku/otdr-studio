@@ -127,13 +127,24 @@ export class SorMatcher {
     for (const [id, all] of byCustomer) {
       const customer = customerList.find(c => c.id === id)!;
 
-      // A job folder can hold several strands (Fiber001 + Fiber002, e.g. two dwelling units).
-      // Each strand gets its own protocol; the one matching the list's fiber number (else the
-      // lowest) is the primary one - strands are never mixed within one protocol.
+      // A job folder can hold several strands (Fiber001 + Fiber002). The one matching the list's
+      // fiber number wins; without a fiber column the best measurement is kept - usable first,
+      // then all events within limits, then the lowest link loss. Strands are never mixed.
       const indices = [...new Set(all.map(m => m.fiberIndex ?? 0))].sort((a, b) => a - b);
-      const chosenIndex = indices.includes(customer.fiberNumber) ? customer.fiberNumber : indices[0];
+      const rank = (i: number) => {
+        const ev = evaluate(all.filter(m => (m.fiberIndex ?? 0) === i));
+        const sor = ev.primary.sor;
+        const eventsOk = (sor.events || []).every((e: any) => e.status !== 'FAIL' || String(e.type).includes('Faserende'));
+        return { usable: !!sor.dataQuality?.usable, eventsOk, loss: sor.linkLossDb ?? sor.totalLossDb ?? Infinity };
+      };
+      const chosenIndex = customer.fiberNumberFromList && indices.includes(customer.fiberNumber)
+        ? customer.fiberNumber
+        : [...indices].sort((x, y) => {
+            const a = rank(x), b = rank(y);
+            return Number(b.usable) - Number(a.usable) || Number(b.eventsOk) - Number(a.eventsOk) || a.loss - b.loss;
+          })[0];
       if (indices.length > 1) {
-        errors.push(`Job #${id}: ${indices.length} Fasern gemessen (${indices.join(', ')}) - für jede Faser wird ein eigenes Protokoll erstellt. Bitte prüfen, ob das zur Zahl der Wohneinheiten passt.`);
+        errors.push(`Job #${id}: ${indices.length} Fasern gemessen (${indices.join(', ')}) - verwendet wird Faser ${chosenIndex}${customer.fiberNumberFromList ? ' laut Kundenliste' : ' (beste Messung)'}.`);
       }
 
       const main = evaluate(all.filter(m => (m.fiberIndex ?? 0) === chosenIndex));
@@ -150,18 +161,6 @@ export class SorMatcher {
       // Without a fiber column the list says nothing about the strand - the device's strand number is real data.
       if (!customer.fiberNumberFromList && chosenIndex > 0) customer.fiberNumber = chosenIndex;
 
-      customer.additionalFibers = indices.filter(i => i !== chosenIndex).map(i => {
-        const ev = evaluate(all.filter(m => (m.fiberIndex ?? 0) === i));
-        return {
-          fiberNumber: i,
-          sorFileName: ev.primary.fileName,
-          sorFilePath: ev.primary.filePath,
-          sorData: ev.primary.sor,
-          secondarySorData: ev.secondary?.sor,
-          macrobendWarning: ev.macrobendWarning,
-        };
-      });
-      if (customer.additionalFibers.length === 0) customer.additionalFibers = undefined;
       matchedIds.push(id);
     }
 

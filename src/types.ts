@@ -49,14 +49,6 @@ export interface CustomerItem {
   cableId?: string;
   fiberNumber: number;
   fiberNumberFromList?: boolean;
-  additionalFibers?: {
-    fiberNumber: number;
-    sorFileName?: string;
-    sorFilePath?: string;
-    sorData?: any;
-    secondarySorData?: any;
-    macrobendWarning?: string;
-  }[];
   fiberType?: string;
   colorCode?: string;
   orderId?: string;

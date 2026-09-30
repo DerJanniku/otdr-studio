@@ -102,11 +102,6 @@ export function CustomerTable({ customers, onSelectCustomer, onGeneratePdf }: Cu
                   ) : isMatched ? (
                     <div>
                       <span style={styles.badgeSuccess}>BEREIT: {c.sorFileName || `Job_${c.id}.sor`}</span>
-                      {c.additionalFibers && c.additionalFibers.length > 0 && (
-                        <div style={{ fontSize: '0.7rem', color: '#eab308', marginTop: '2px' }}>
-                          + Faser {c.additionalFibers.map(f => f.fiberNumber).join(', ')} (je eigenes Protokoll)
-                        </div>
-                      )}
                       <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
                         {c.measuredAt ? new Date(c.measuredAt).toLocaleDateString('de-DE') : 'Messung verknüpft'}
                       </div>
