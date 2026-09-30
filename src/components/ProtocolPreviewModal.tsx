@@ -11,17 +11,31 @@ interface ProtocolPreviewModalProps {
 
 export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverride, onGeneratePdf }: ProtocolPreviewModalProps) {
   const [activeTab, setActiveTab] = useState<'preview' | 'edit'>('preview');
-  const [formData, setFormData] = useState({
-    customerName: customer.customOverrides?.customerName ?? customer.customerName,
-    street: customer.customOverrides?.street ?? customer.street,
-    city: customer.customOverrides?.city ?? customer.city,
-    technicianName: customer.customOverrides?.technicianName ?? customer.technicianName ?? settings.defaultTechnician,
-    date: customer.customOverrides?.date ?? (customer.measuredAt ? new Date(customer.measuredAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : new Date().toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })),
-    time: customer.customOverrides?.time ?? (customer.measuredAt ? new Date(customer.measuredAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr' : new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr'),
-    segment: customer.customOverrides?.segment ?? customer.segment ?? `NVt ➔ HÜP ${customer.customerName}`,
-    cableId: customer.customOverrides?.cableId ?? customer.cableId ?? `K-${customer.id}`,
-    fiberNumber: customer.customOverrides?.fiberNumber ?? customer.fiberNumber ?? 1,
+  // Values the protocol shows without any manual change. Only fields that differ are stored as
+  // overrides, so later changes (e.g. a new technician in the settings) still reach old records.
+  const [defaults] = useState(() => {
+    const measured = customer.measuredAt ? new Date(customer.measuredAt) : new Date();
+    return {
+      customerName: customer.customerName,
+      street: customer.street,
+      city: customer.city,
+      technicianName: settings.defaultTechnician || customer.technicianName || '',
+      date: measured.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+      time: measured.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr',
+      segment: customer.segment ?? '',
+      cableId: customer.cableId ?? '',
+      fiberNumber: customer.fiberNumber ?? 1,
+    };
   });
+  const [formData, setFormData] = useState(() => ({ ...defaults, ...(customer.customOverrides || {}) }));
+
+  const buildOverrides = (): CustomerItem['customOverrides'] => {
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(defaults) as (keyof typeof defaults)[]) {
+      if (formData[key] !== defaults[key] && formData[key] !== '' && formData[key] !== undefined) out[key] = formData[key];
+    }
+    return out as CustomerItem['customOverrides'];
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -31,15 +45,7 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  const handleSave = () => {
-    const updated: CustomerItem = {
-      ...customer,
-      customOverrides: {
-        ...formData
-      }
-    };
-    onSaveOverride(updated);
-  };
+  const handleSave = () => onSaveOverride({ ...customer, customOverrides: buildOverrides() });
 
   const sor = customer.sorData;
   const [preview, setPreview] = useState<{ html?: string; error?: string }>({});
@@ -47,7 +53,7 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
   useEffect(() => {
     if (!sor || activeTab !== 'preview' || !window.api?.renderProtocolHtml) return;
     let cancelled = false;
-    window.api.renderProtocolHtml({ ...customer, customOverrides: formData }, settings).then(res => {
+    window.api.renderProtocolHtml({ ...customer, customOverrides: buildOverrides() }, settings).then(res => {
       if (!cancelled) setPreview(res.success ? { html: res.html } : { error: res.error });
     });
     return () => { cancelled = true; };
@@ -93,7 +99,7 @@ export function ProtocolPreviewModal({ customer, settings, onClose, onSaveOverri
               onClick={async () => {
                 if (!customer.sorData) return;
                 // Save first, then export - running both at once let the save overwrite the "exported" status.
-                const updated: CustomerItem = { ...customer, customOverrides: formData };
+                const updated: CustomerItem = { ...customer, customOverrides: buildOverrides() };
                 await onSaveOverride(updated);
                 await onGeneratePdf(updated);
               }}

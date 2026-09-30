@@ -7,9 +7,11 @@ export const DEFAULT_COLUMN_MAPPING: ExcelColumnMapping = {
   firstName: 'vorname, firstname, first name',
   lastName: 'nachname, lastname, last name, familienname, surname',
   street: 'straße, strasse, street, adresse, anschrift, address',
+  houseNumber: 'hausnr, hausnummer, haus-nr, hnr, house number',
   zip: 'plz, postleitzahl, zip, zip-code, postal, postalcode',
   city: 'ort, stadt, wohnort, gemeinde, city, town',
-  segment: 'nvt, segment, strecke, trasse, abschnitt, cluster, route, section',
+  district: 'ortsteil, ot, district',
+  segment: 'nvt, kvz, segment, strecke, trasse, abschnitt, cluster, route, section',
   cableId: 'kabel, cable, kabel-id, kabelbezeichnung, cable-id',
   fiberNumber: 'faser, faser-nr, fasernummer, fiber, strand, fiber-no',
   orderId: 'auftrag, auftrags-nr, auftragsnummer, ticket, order, bestellung, vorgang, order-id',
@@ -189,7 +191,7 @@ export function SettingsModal({ settings, onClose, onSave }: SettingsModalProps)
                   />
                 </div>
                 <div>
-                  <label style={styles.label}>Standard-Messtechniker:</label>
+                  <label style={styles.label}>Messtechniker (steht auf jedem Protokoll):</label>
                   <input 
                     style={styles.input}
                     value={formData.defaultTechnician}
@@ -490,6 +492,34 @@ export function SettingsModal({ settings, onClose, onSave }: SettingsModalProps)
                     })}
                   />
                   <span style={styles.fieldHint}>Ortsname oder kombinierte PLZ+Ort Spalte</span>
+                </div>
+
+                <div>
+                  <label style={styles.label}>Hausnummer (eigene Spalte):</label>
+                  <input
+                    style={styles.input}
+                    placeholder="hausnr, hausnummer, hnr"
+                    value={formData.columnMapping?.houseNumber ?? ''}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      columnMapping: { ...formData.columnMapping, houseNumber: e.target.value }
+                    })}
+                  />
+                  <span style={styles.fieldHint}>Wird an die Straße angehängt</span>
+                </div>
+
+                <div>
+                  <label style={styles.label}>Ortsteil:</label>
+                  <input
+                    style={styles.input}
+                    placeholder="ortsteil, ot"
+                    value={formData.columnMapping?.district ?? ''}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      columnMapping: { ...formData.columnMapping, district: e.target.value }
+                    })}
+                  />
+                  <span style={styles.fieldHint}>Stehen „Stadt“ und „Ort“ beide in der Liste, wird „Ort“ automatisch als Ortsteil genutzt</span>
                 </div>
 
                 <div style={{ gridColumn: 'span 2' }}>

@@ -35,7 +35,7 @@ const PROJECT_LABELS: LevelLabels = {
   namePlaceholder: 'z. B. Musterstadt',
   clusterLabel: 'Cluster',
   clusterPlaceholder: 'z. B. Cluster Nord',
-  folderHelp: 'Synchronisierter SharePoint-Ordner des Projekts. Fertige PDFs landen dort unter <Job-ID>/Messungen/. Ein bestehender Kundenordner wie „145_Mustermann“ wird automatisch verwendet.',
+  folderHelp: 'Synchronisierter SharePoint-Ordner. Jedes PDF landet im Kundenordner, der nach der Adresse („Musterstraße 1“) oder der Job-ID („145“) benannt ist; fehlt er, wird er angelegt.',
 };
 
 const AUSBAUGEBIET_LABELS: LevelLabels = {

@@ -60,7 +60,7 @@ export function SetupWizard({ initialSettings, onFinish }: SetupWizardProps) {
             <input style={styles.input} value={form.companyContact} onChange={(e) => setForm({ ...form, companyContact: e.target.value })} />
           </div>
           <div>
-            <label style={styles.label}>Standard-Messtechniker:</label>
+            <label style={styles.label}>Messtechniker (steht auf jedem Protokoll):</label>
             <input style={styles.input} value={form.defaultTechnician} onChange={(e) => setForm({ ...form, defaultTechnician: e.target.value })} />
           </div>
           <div>

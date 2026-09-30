@@ -66,10 +66,11 @@ export class PdfExporter {
     const effectiveName = esc(overrides.customerName || customer.customerName);
     const effectiveStreet = esc(overrides.street || customer.street);
     const effectiveCity = esc(overrides.city || customer.city);
-    const effectiveSegment = esc(overrides.segment || customer.segment || `NVt ➔ HÜP ${overrides.customerName || customer.customerName}`);
-    const effectiveCableId = esc(overrides.cableId || customer.cableId || `K-${customer.id}`);
+    const effectiveSegment = esc(overrides.segment || customer.segment || '–');
+    const effectiveCableId = esc(overrides.cableId || customer.cableId || '–');
     const effectiveFiberNr = overrides.fiberNumber || customer.fiberNumber || 1;
-    const effectiveTech = esc(overrides.technicianName || customer.technicianName || settings.defaultTechnician);
+    // The technician from the settings signs the protocol; the device's operator field is only a fallback.
+    const effectiveTech = esc(overrides.technicianName || settings.defaultTechnician || customer.technicianName);
     const effectiveDate = overrides.date || (customer.measuredAt ? new Date(customer.measuredAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : new Date().toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }));
     const effectiveTime = overrides.time || (customer.measuredAt ? new Date(customer.measuredAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr' : new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr');
 
@@ -88,7 +89,7 @@ export class PdfExporter {
     const launchFiberEsc = esc(settings.launchFiber);
     const orderIdEsc = esc(customer.orderId || `AUFTRAG-${customer.id}`);
     const fiberInfo = getFiberColorInfo(effectiveFiberNr);
-    const colorCodeEsc = esc(customer.colorCode && !customer.colorCode.includes('DIN 47100') ? customer.colorCode : fiberInfo.label);
+    const colorCodeEsc = esc(fiberInfo.label);
     const fiberTypeEsc = esc(customer.fiberType || 'Singlemode ITU-T G.657.A1 / G.652D (9/125 µm)');
     const sorFileNameEsc = esc(customer.sorFileName || `Job_${customer.id}.sor`);
 
@@ -172,8 +173,6 @@ export class PdfExporter {
     const endDistM = lastEv && num(lastEv.distance) !== null ? (lastEv.distance as number) * 1000 : lenM;
     const perKm = num(sorData.avgLossDbPerKm);
     const orl = num(sorData.orlDb);
-    const eventsAllPass = Array.isArray(sorData.events) && sorData.events.length > 0
-      && sorData.events.every((e: any) => e.status !== 'FAIL');
     const isEndEvent = (e: any) => String(e?.type ?? '').includes('Faserende');
     const evLossLimit = (e: any): number | null => {
       if (isEndEvent(e)) return null;                        // Streckenende: kein Daempfungsgrenzwert
@@ -181,6 +180,18 @@ export class PdfExporter {
         ? (settings.maxLossConnector ?? 0.5)
         : (settings.maxLossSplice ?? 0.15);
     };
+    // Judged against the current settings. The fiber end is the open connector face at the HÜP:
+    // without a receive fiber its reflection cannot qualify the connector, so it is shown but not judged.
+    const REFL_LIMIT = -40;
+    const evStatus = (e: any): 'PASS' | 'FAIL' | 'NB' => {
+      if (isEndEvent(e)) return 'NB';
+      const limit = evLossLimit(e);
+      const lossBad = limit !== null && typeof e.loss === 'number' && e.loss > limit;
+      const reflBad = typeof e.reflectance === 'number' && e.reflectance !== 0 && e.reflectance > REFL_LIMIT;
+      return lossBad || reflBad ? 'FAIL' : 'PASS';
+    };
+    const eventsAllPass = Array.isArray(sorData.events) && sorData.events.length > 0
+      && sorData.events.every((e: any) => evStatus(e) !== 'FAIL');
     // Der dB/km-Grenzwert gilt fuer die reine Faserdaempfung. Unsere Kennzahl ist
     // Streckendaempfung/Laenge und enthaelt die Ereignisse - sie direkt gegen 0,230 zu pruefen
     // wuerde kurze Strecken mit einem zulaessigen Spleiss faelschlich durchfallen lassen.
@@ -578,7 +589,7 @@ export class PdfExporter {
         return withPos.map((item: any, sortedIdx: number) => {
           const { ev, xPos } = item;
           const labelY = sortedIdx % 2 === 0 ? 9 : 18;
-          const markerColor = ev.status === 'PASS' ? '#15803d' : '#b45309';
+          const markerColor = evStatus(ev) === 'FAIL' ? '#b45309' : '#15803d';
           const labelX = Math.min(686, Math.max(60, xPos));
           return `
             <line x1="${xPos.toFixed(1)}" y1="24" x2="${xPos.toFixed(1)}" y2="96" stroke="${markerColor}" stroke-width="0.6" stroke-dasharray="2,2"/>
@@ -618,9 +629,9 @@ export class PdfExporter {
             <td style="font-weight: 700; color: ${evLossLimit(ev) !== null && typeof ev.loss === 'number' && ev.loss > (evLossLimit(ev) as number) ? '#dc2626' : '#0f172a'};">${isEndEvent(ev) ? '–' : (typeof ev.loss === 'number' ? ev.loss.toFixed(2) + ' dB' : '–')}</td>
             <td style="color: #64748b;">${evLossLimit(ev) !== null ? `≤ ${(evLossLimit(ev) as number).toFixed(2)} dB` : '–'}</td>
             <td style="font-family: monospace;">${ev.reflectance !== null && ev.reflectance !== undefined && ev.reflectance !== 0 ? (typeof ev.reflectance === 'number' ? ev.reflectance.toFixed(1) : ev.reflectance) + ' dB' : '–'}</td>
-            <td style="color: #64748b;">${ev.reflectance !== null && ev.reflectance !== undefined && ev.reflectance !== 0 ? '≤ -40.0 dB' : '–'}</td>
+            <td style="color: #64748b;">${isEndEvent(ev) ? 'nicht bewertet' : (ev.reflectance !== null && ev.reflectance !== undefined && ev.reflectance !== 0 ? `≤ ${REFL_LIMIT.toFixed(1)} dB` : '–')}</td>
             <td style="text-align: center;">
-              ${ev.status === 'FAIL' ? '<span class="badge-fail">FAIL</span>' : '<span class="badge-pass">PASS</span>'}
+              ${evStatus(ev) === 'FAIL' ? '<span class="badge-fail">FAIL</span>' : evStatus(ev) === 'NB' ? '<span style="color:#64748b;font-weight:700;">–</span>' : '<span class="badge-pass">PASS</span>'}
             </td>
           </tr>
         `).join('')}

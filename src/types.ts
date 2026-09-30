@@ -48,6 +48,15 @@ export interface CustomerItem {
   segment?: string;
   cableId?: string;
   fiberNumber: number;
+  fiberNumberFromList?: boolean;
+  additionalFibers?: {
+    fiberNumber: number;
+    sorFileName?: string;
+    sorFilePath?: string;
+    sorData?: any;
+    secondarySorData?: any;
+    macrobendWarning?: string;
+  }[];
   fiberType?: string;
   colorCode?: string;
   orderId?: string;
@@ -81,8 +90,10 @@ export interface ExcelColumnMapping {
   firstName: string;
   lastName: string;
   street: string;
+  houseNumber: string;
   zip: string;
   city: string;
+  district: string;
   segment: string;
   cableId: string;
   fiberNumber: string;

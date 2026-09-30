@@ -39,8 +39,8 @@ export function CustomerTable({ customers, onSelectCustomer, onGeneratePdf }: Cu
             const name = c.customOverrides?.customerName || c.customerName;
             const street = c.customOverrides?.street || c.street;
             const city = c.customOverrides?.city || c.city;
-            const cableId = c.customOverrides?.cableId || c.cableId || `K-${c.id}`;
-            const segment = c.customOverrides?.segment || c.segment || `NVt ➔ HÜP ${name}`;
+            const cableId = c.customOverrides?.cableId || c.cableId || '–';
+            const segment = c.customOverrides?.segment || c.segment || '';
             const loss = c.sorData?.totalLossDb ? `${c.sorData.totalLossDb.toFixed(3)} dB` : '–';
             const length = c.sorData?.lengthMeters ? `${(c.sorData.lengthMeters).toFixed(0)} m` : '–';
 
@@ -101,6 +101,11 @@ export function CustomerTable({ customers, onSelectCustomer, onGeneratePdf }: Cu
                   ) : isMatched ? (
                     <div>
                       <span style={styles.badgeSuccess}>BEREIT: {c.sorFileName || `Job_${c.id}.sor`}</span>
+                      {c.additionalFibers && c.additionalFibers.length > 0 && (
+                        <div style={{ fontSize: '0.7rem', color: '#eab308', marginTop: '2px' }}>
+                          + Faser {c.additionalFibers.map(f => f.fiberNumber).join(', ')} (je eigenes Protokoll)
+                        </div>
+                      )}
                       <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
                         {c.measuredAt ? new Date(c.measuredAt).toLocaleDateString('de-DE') : 'Messung verknüpft'}
                       </div>

@@ -59,6 +59,16 @@ type LevelInput = { name?: string; clusterName?: string; providerName?: string; 
 
 const LEGACY_DEMO_NOTE = 'Beispiel-Datensatz (Demo)';
 
+/** A further strand measured for the same connection (e.g. two dwelling units). */
+export interface FiberMeasurement {
+  fiberNumber: number;
+  sorFileName?: string;
+  sorFilePath?: string;
+  sorData?: any;
+  secondarySorData?: any;
+  macrobendWarning?: string;
+}
+
 export interface CustomerItem {
   id: number;
   customerName: string;
@@ -67,6 +77,9 @@ export interface CustomerItem {
   segment?: string;
   cableId?: string;
   fiberNumber: number;
+  /** False when the list has no fiber column - the measured strand number is used instead. */
+  fiberNumberFromList?: boolean;
+  additionalFibers?: FiberMeasurement[];
   fiberType?: string;
   colorCode?: string;
   orderId?: string;
@@ -100,8 +113,10 @@ export interface ExcelColumnMapping {
   firstName: string;
   lastName: string;
   street: string;
+  houseNumber: string;
   zip: string;
   city: string;
+  district: string;
   segment: string;
   cableId: string;
   fiberNumber: string;
@@ -114,9 +129,11 @@ export const DEFAULT_COLUMN_MAPPING: ExcelColumnMapping = {
   firstName: 'vorname, firstname, first name',
   lastName: 'nachname, lastname, last name, familienname, surname',
   street: 'straße, strasse, street, adresse, anschrift, address',
+  houseNumber: 'hausnr, hausnummer, haus-nr, hnr, house number',
   zip: 'plz, postleitzahl, zip, zip-code, postal, postalcode',
   city: 'ort, stadt, wohnort, gemeinde, city, town',
-  segment: 'nvt, segment, strecke, trasse, abschnitt, cluster, route, section',
+  district: 'ortsteil, ot, district',
+  segment: 'nvt, kvz, segment, strecke, trasse, abschnitt, cluster, route, section',
   cableId: 'kabel, cable, kabel-id, kabelbezeichnung, cable-id',
   fiberNumber: 'faser, faser-nr, fasernummer, fiber, strand, fiber-no',
   orderId: 'auftrag, auftrags-nr, auftragsnummer, ticket, order, bestellung, vorgang, order-id',
@@ -484,6 +501,17 @@ export class CustomerStore {
     return candidates.find(c => !!c && fs.existsSync(c)) || null;
   }
 
+  // Protocol header fields taken from the hierarchy instead of the global settings.
+  public getProtocolContext(kvzId: string | null = this.activeKvzId): { projectCluster?: string; providerName?: string } {
+    const kvz = kvzId ? this.getKVZ(kvzId) : null;
+    if (!kvz) return {};
+    const ag = this.readJsonArray<Ausbaugebiet>(this.ausbaugebietePath).find(a => a.id === kvz.ausbaugebietId);
+    const proj = ag ? this.projects.find(p => p.id === ag.projectId) : undefined;
+    const projectCluster = [proj?.name, ag?.name, kvz.name].filter(Boolean).join(' · ');
+    const providerName = kvz.providerName || ag?.providerName || proj?.providerName || undefined;
+    return { projectCluster, ...(providerName ? { providerName } : {}) };
+  }
+
   public getActiveProjectId(): string {
     return this.activeProjectId;
   }
@@ -675,6 +703,8 @@ export class CustomerStore {
       firstName: customMapping?.firstName ?? DEFAULT_COLUMN_MAPPING.firstName,
       lastName: customMapping?.lastName ?? DEFAULT_COLUMN_MAPPING.lastName,
       street: customMapping?.street ?? DEFAULT_COLUMN_MAPPING.street,
+      houseNumber: customMapping?.houseNumber ?? DEFAULT_COLUMN_MAPPING.houseNumber,
+      district: customMapping?.district ?? DEFAULT_COLUMN_MAPPING.district,
       zip: customMapping?.zip ?? DEFAULT_COLUMN_MAPPING.zip,
       city: customMapping?.city ?? DEFAULT_COLUMN_MAPPING.city,
       segment: customMapping?.segment ?? DEFAULT_COLUMN_MAPPING.segment,
@@ -699,6 +729,8 @@ export class CustomerStore {
       zip: parseAliases(mapping.zip),
       city: parseAliases(mapping.city),
       street: parseAliases(mapping.street),
+      houseNumber: parseAliases(mapping.houseNumber),
+      district: parseAliases(mapping.district),
       firstName: parseAliases(mapping.firstName),
       lastName: parseAliases(mapping.lastName),
       customerName: parseAliases(mapping.customerName),
@@ -716,9 +748,13 @@ export class CustomerStore {
       if (exactMatch(aliases.fiberNumber)) colMap['fiberNumber'] = idx;
       else if (exactMatch(aliases.cableId)) colMap['cableId'] = idx;
       else if (exactMatch(aliases.orderId)) colMap['orderId'] = idx;
+      else if (exactMatch(aliases.houseNumber)) colMap['houseNumber'] = idx;
       else if (exactMatch(aliases.id)) colMap['id'] = idx;
       else if (exactMatch(aliases.street)) colMap['street'] = idx;
       else if (exactMatch(aliases.zip)) colMap['zip'] = idx;
+      else if (exactMatch(aliases.district)) colMap['district'] = idx;
+      // "Stadt | Ort" in one list: the first is the town, the second its district (Ortsteil).
+      else if (exactMatch(aliases.city) && colMap['city'] !== undefined && colMap['district'] === undefined) colMap['district'] = idx;
       else if (exactMatch(aliases.city)) colMap['city'] = idx;
       else if (exactMatch(aliases.segment)) colMap['segment'] = idx;
       else if (exactMatch(aliases.firstName)) vornameCol = idx;
@@ -741,7 +777,8 @@ export class CustomerStore {
       const hasNumberWord = norm.includes('nr') || norm.includes('nummer') || norm.includes('num');
       const isTelefonOrHaus = norm.includes('telefon') || norm.includes('tel') || norm.includes('haus');
 
-      if (colMap['fiberNumber'] === undefined && substringMatch(aliases.fiberNumber)) colMap['fiberNumber'] = idx;
+      if (colMap['houseNumber'] === undefined && substringMatch(aliases.houseNumber)) colMap['houseNumber'] = idx;
+      else if (colMap['fiberNumber'] === undefined && substringMatch(aliases.fiberNumber)) colMap['fiberNumber'] = idx;
       else if (colMap['cableId'] === undefined && substringMatch(aliases.cableId)) colMap['cableId'] = idx;
       else if (colMap['orderId'] === undefined && substringMatch(aliases.orderId)) colMap['orderId'] = idx;
       else if (colMap['street'] === undefined && substringMatch(aliases.street)) colMap['street'] = idx;
@@ -784,14 +821,21 @@ export class CustomerStore {
     const vorname = get('vorname');
     const nachname = get('nachname');
     const combinedName = [vorname, nachname].filter(Boolean).join(' ').trim();
-    const name = combinedName || get('name') || `Kunde #${id}`;
-    const street = get('street') || 'Musterstraße 1';
-    const city = [get('zip'), get('city')].filter(Boolean).join(' ').trim() || '98248 Ort';
-    const segment = get('segment') || `NVt ➔ HÜP ${name}`;
-    const cableId = get('cableId') || `K-JOB-${id}`;
+    // Missing fields stay empty - an acceptance report must not show invented addresses or ids.
+    const street = [get('street'), get('houseNumber')].filter(Boolean).join(' ').trim();
+    const town = [get('zip'), get('city')].filter(Boolean).join(' ').trim();
+    const district = get('district');
+    const city = district && !town.toLowerCase().includes(district.toLowerCase())
+      ? [town, district].filter(Boolean).join(' OT ')
+      : town;
+    // Lists without a name column (address lists) use the address as connection name.
+    const name = combinedName || get('name') || street || `Anschluss #${id}`;
+    const segmentRaw = get('segment');
+    const segment = segmentRaw ? (segmentRaw.includes('➔') ? segmentRaw : `${segmentRaw} ➔ HÜP`) : '';
+    const cableId = get('cableId');
     const fiberNrRaw = get('fiberNumber');
     const fiberNr = fiberNrRaw ? (parseInt(fiberNrRaw.replace(/[^\d]/g, ''), 10) || 1) : 1;
-    const orderId = get('orderId') || `AUFTRAG-${id}`;
+    const orderId = get('orderId');
     const fiberInfo = getFiberColorInfo(fiberNr);
 
     return {
@@ -801,7 +845,9 @@ export class CustomerStore {
       city: city.trim(),
       segment: segment.trim(),
       cableId: cableId.trim(),
-      fiberNumber: fiberNr,
+      fiberNumber: existing?.fiberNumberFromList === false && !fiberNrRaw ? existing.fiberNumber : fiberNr,
+      fiberNumberFromList: !!fiberNrRaw,
+      additionalFibers: existing?.additionalFibers,
       fiberType: existing?.fiberType || 'Singlemode ITU-T G.657.A1 (9/125 µm)',
       colorCode: fiberInfo.label,
       orderId: orderId.trim(),
@@ -863,8 +909,13 @@ export class CustomerStore {
         }
 
         const colMap = bestColMap;
+        let emptyStreak = 0;
         for (let r = headerRowIdx + 1; r <= worksheet.rowCount; r++) {
+          // Sheets formatted down to row 1,048,576 would otherwise take minutes to walk.
+          if (emptyStreak > 200) break;
           const row = worksheet.getRow(r);
+          if (!row.hasValues) { emptyStreak++; continue; }
+          emptyStreak = 0;
           const cellAt = (colIdx: number | undefined) => {
             if (colIdx === undefined || colIdx < 0) return '';
             return CustomerStore.excelCellText(row.getCell(colIdx)).trim();

@@ -103,46 +103,65 @@ export class SorMatcher {
       }
     }
 
-    for (const [id, all] of byCustomer) {
-      const customer = customerList.find(c => c.id === id)!;
-
-      // A job folder can hold several strands (Fiber001 + Fiber002). Use the strand that matches
-      // the customer's fiber number, otherwise the lowest one - never mix strands in one protocol.
-      const indices = [...new Set(all.map(m => m.fiberIndex ?? 0))].sort((a, b) => a - b);
-      const chosenIndex = indices.includes(customer.fiberNumber) ? customer.fiberNumber : indices[0];
-      const group = all.filter(m => (m.fiberIndex ?? 0) === chosenIndex);
-      if (indices.length > 1) {
-        errors.push(`Job #${id}: Messungen für mehrere Fasern gefunden (${indices.join(', ')}) - verwendet wurde Faser ${chosenIndex}. Bitte prüfen.`);
-      }
-
-      // Primary = usable measurement at the longest wavelength (1550 nm reacts to macrobends).
-      // Latest file per wavelength wins when a fiber was measured twice.
+    // Primary = usable measurement at the longest wavelength (1550 nm reacts to macrobends).
+    // Latest file per wavelength wins when a fiber was measured twice.
+    const evaluate = (group: Measurement[]) => {
       const perWl = new Map<number, Measurement>();
       for (const m of group) perWl.set(m.wl, m);
       const ranked = [...perWl.values()].sort((a, b) =>
         Number(!!b.sor.dataQuality?.usable) - Number(!!a.sor.dataQuality?.usable) || b.wl - a.wl);
       const primary = ranked[0];
       const secondary = ranked.find(m => m !== primary && Math.abs(m.wl - primary.wl) > 100);
-
-      customer.macrobendWarning = undefined;
-      customer.secondarySorData = secondary?.sor;
+      let macrobendWarning: string | undefined;
       if (secondary) {
         const [low, high] = primary.wl < secondary.wl ? [primary, secondary] : [secondary, primary];
-        const loss1310 = low.sor.totalLossDb;
-        const loss1550 = high.sor.totalLossDb;
-        if (typeof loss1310 === 'number' && typeof loss1550 === 'number' && loss1550 - loss1310 > 0.5) {
-          customer.macrobendWarning = `Verdacht auf Makrobiegung / Faserknick in Kassette: Dämpfung bei ${high.wl.toFixed(0)} nm (${loss1550.toFixed(2)} dB) ist um ${(loss1550 - loss1310).toFixed(2)} dB höher als bei ${low.wl.toFixed(0)} nm (${loss1310.toFixed(2)} dB).`;
+        const lossLow = low.sor.totalLossDb;
+        const lossHigh = high.sor.totalLossDb;
+        if (typeof lossLow === 'number' && typeof lossHigh === 'number' && lossHigh - lossLow > 0.5) {
+          macrobendWarning = `Verdacht auf Makrobiegung / Faserknick in Kassette: Dämpfung bei ${high.wl.toFixed(0)} nm (${lossHigh.toFixed(2)} dB) ist um ${(lossHigh - lossLow).toFixed(2)} dB höher als bei ${low.wl.toFixed(0)} nm (${lossLow.toFixed(2)} dB).`;
         }
       }
+      return { primary, secondary, macrobendWarning };
+    };
 
-      customer.status = 'matched';
-      customer.sorFileName = primary.fileName;
-      customer.sorFilePath = primary.filePath;
-      customer.sorData = primary.sor;
-      customer.measuredAt = this.plausibleDate(primary.parsed.FxdParams?.['date/time']);
-      if (primary.parsed.GenParams?.operator) {
-        customer.technicianName = primary.parsed.GenParams.operator;
+    for (const [id, all] of byCustomer) {
+      const customer = customerList.find(c => c.id === id)!;
+
+      // A job folder can hold several strands (Fiber001 + Fiber002, e.g. two dwelling units).
+      // Each strand gets its own protocol; the one matching the list's fiber number (else the
+      // lowest) is the primary one - strands are never mixed within one protocol.
+      const indices = [...new Set(all.map(m => m.fiberIndex ?? 0))].sort((a, b) => a - b);
+      const chosenIndex = indices.includes(customer.fiberNumber) ? customer.fiberNumber : indices[0];
+      if (indices.length > 1) {
+        errors.push(`Job #${id}: ${indices.length} Fasern gemessen (${indices.join(', ')}) - für jede Faser wird ein eigenes Protokoll erstellt. Bitte prüfen, ob das zur Zahl der Wohneinheiten passt.`);
       }
+
+      const main = evaluate(all.filter(m => (m.fiberIndex ?? 0) === chosenIndex));
+      customer.macrobendWarning = main.macrobendWarning;
+      customer.secondarySorData = main.secondary?.sor;
+      customer.status = 'matched';
+      customer.sorFileName = main.primary.fileName;
+      customer.sorFilePath = main.primary.filePath;
+      customer.sorData = main.primary.sor;
+      customer.measuredAt = this.plausibleDate(main.primary.parsed.FxdParams?.['date/time']);
+      if (main.primary.parsed.GenParams?.operator) {
+        customer.technicianName = main.primary.parsed.GenParams.operator;
+      }
+      // Without a fiber column the list says nothing about the strand - the device's strand number is real data.
+      if (!customer.fiberNumberFromList && chosenIndex > 0) customer.fiberNumber = chosenIndex;
+
+      customer.additionalFibers = indices.filter(i => i !== chosenIndex).map(i => {
+        const ev = evaluate(all.filter(m => (m.fiberIndex ?? 0) === i));
+        return {
+          fiberNumber: i,
+          sorFileName: ev.primary.fileName,
+          sorFilePath: ev.primary.filePath,
+          sorData: ev.primary.sor,
+          secondarySorData: ev.secondary?.sor,
+          macrobendWarning: ev.macrobendWarning,
+        };
+      });
+      if (customer.additionalFibers.length === 0) customer.additionalFibers = undefined;
       matchedIds.push(id);
     }
 
