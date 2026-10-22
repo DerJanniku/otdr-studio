@@ -28,7 +28,7 @@
     "electron-updater": "^6.8.9",
     "exceljs": "^4.4.0",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0",
+    "react-dom": "^19.3.1",
     "sor-reader": "^1.0.0"
   },
   "overrides": {
