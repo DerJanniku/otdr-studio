@@ -25,7 +25,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "electron-updater": "^6.8.9",
+    "electron-updater": "^6.8.11",
     "exceljs": "^4.4.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.1",
